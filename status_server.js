@@ -23,7 +23,11 @@ const db = require(path.join(DB_DIR, "db"));
 
 const PORT = parseInt(process.env.STATUS_PORT || "8090", 10);
 const HOST = process.env.STATUS_HOST || "127.0.0.1";
-const INTERVAL_MS = 5000;
+// รอบเช็ค (เร็วขึ้น 1 ต.ค. 2569 — เดิมทุก 5 วิ กว่าจะเห็นว่าล่ม ระบบก็กลับมาแล้ว)
+const FAST_MS = 1000;     // ส่วนสแกน + กล้อง (8000/api/health)
+const API_MS = 2000;      // ส่วนบันทึกข้อมูล (5000)
+const ORACLE_MS = 5000;   // Oracle (query จริง)
+const SLOW_MS = 30000;    // ดิสก์ + สำรองข้อมูล (เปลี่ยนช้า)
 const GRACE_MS = 60000;
 const BACKUP_DIR = path.join(ROOT, "backups", "db");
 const LOG_FILE = path.join(ROOT, "backend", "mainprogram", "detection.log");
@@ -80,7 +84,7 @@ const okay = (id, detail) => { delete failSince[id]; return { st: "ok", detail }
 
 async function checkScanAndCamera() {
   try {
-    const h = await getJson("http://127.0.0.1:8000/api/health");
+    const h = await getJson("http://127.0.0.1:8000/api/health", 2000);
     last.scan = okay("scan", h.fps ? `${Math.round(h.fps)} เฟรม/วินาที` : "ตอบปกติ");
     const age = Number(h.last_frame_age_seconds);
     if (h.camera_ok && isFinite(age) && age < 5) last.camera = okay("camera", `ภาพล่าสุด ${age.toFixed(1)} วินาทีที่แล้ว`);
@@ -93,7 +97,7 @@ async function checkScanAndCamera() {
 }
 async function checkApi() {
   try {
-    const j = await getJson("http://127.0.0.1:5000/api/plates?limit=1");
+    const j = await getJson("http://127.0.0.1:5000/api/plates?limit=1", 3000);
     const total = j && j.pagination ? j.pagination.total : null;
     last.api = okay("api", total != null ? `ทั้งหมด ${total} รายการ` : "ตอบปกติ");
   } catch (e) { last.api = failed("api", e.message); }
@@ -133,13 +137,121 @@ function checkBackup() {
   } catch (e) { last.backup = { st: "unknown", detail: "อ่านโฟลเดอร์สำรองไม่ได้" }; }
 }
 
+// ── แจ้งเตือนทางอีเมล · เพิ่ม 1 ต.ค. 2569 ───────────────────────────────
+// ใช้ Gmail + App Password ชุดเดียวกับ checkprogram\.env (EMAIL_ENABLED / EMAIL_SENDER / EMAIL_APP_PASSWORD / EMAIL_TO / ALERT_COOLDOWN_MINUTES)
+// แจ้งเฉพาะสิ่งที่ checkprogram\monitor.py ไม่เห็น (monitor เช็คแค่พอร์ต 8000/5000/1521 + กล้องต่อ TCP ได้)
+//   กล้อง: ภาพค้าง/ไม่มีภาพ ≥ 60 วิ · Oracle: query ไม่ผ่าน ≥ 60 วิ · ดิสก์/สำรองข้อมูล: ตั้งแต่เหลือง
+// ทดสอบ: node status_server.js --test-email
+const tls = require("tls");
+const CHECK_DIR = process.env.CHECKPROGRAM_DIR || path.resolve(__dirname, "..", "checkprogram");
+const MAIL_IDS = { camera: "down", oracle: "down", disk: "warn", backup: "warn" };   // id → แจ้งเมื่อแย่ถึงระดับนี้
+const RANK = { ok: 0, unknown: 0, warn: 1, down: 2 };
+const mailed = {};     // id → ส่งแจ้งเตือนไปแล้ว รอส่ง "กลับมาปกติ"
+const lastMail = {};   // id → เวลาส่งล่าสุด (กันสแปมตาม ALERT_COOLDOWN_MINUTES)
+
+function readEnvFile(p) {
+  const env = {};
+  try {
+    for (const line of fs.readFileSync(p, "utf8").replace(/^﻿/, "").split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (m) env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+    }
+  } catch (_) {}
+  return env;
+}
+let mailCache = { at: 0, cfg: null };
+function mailCfg() {   // อ่าน .env ใหม่ทุก 10 วิ: แก้ได้โดยไม่ต้องปิดโปรแกรม
+  if (mailCache.cfg && Date.now() - mailCache.at < 10000) return mailCache.cfg;
+  const e = readEnvFile(path.join(CHECK_DIR, ".env"));
+  const re = /^[^@\s,<>]+@[^@\s,<>]+\.[^@\s,<>]+$/;
+  const sender = (e.EMAIL_SENDER || "").trim();
+  const pass = (e.EMAIL_APP_PASSWORD || "").replace(/\s/g, "");
+  const to = (e.EMAIL_TO || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const valid = re.test(sender) && to.length > 0 && to.every((x) => re.test(x)) && pass.length === 16;
+  mailCache = { at: Date.now(), cfg: { valid, enabled: valid && /^(1|true|yes|on)$/i.test(e.EMAIL_ENABLED || ""), sender, pass, to,
+           cooldownMs: (parseFloat(e.ALERT_COOLDOWN_MINUTES) || 60) * 60000 } };
+  return mailCache.cfg;
+}
+const oneLine = (s, n = 200) => String(s).replace(/[\r\n\t\x00-\x1f]/g, " ").slice(0, n);
+const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
+
+// SMTP แบบสั้นๆ ผ่าน TLS (smtp.gmail.com:465) ไม่ต้องลง nodemailer
+function sendMail(cfg, subject, body) {
+  return new Promise((resolve, reject) => {
+    const msg = [
+      `From: ${cfg.sender}`, `To: ${cfg.to.join(", ")}`,
+      `Subject: =?UTF-8?B?${b64(oneLine(subject, 120))}?=`,
+      `Date: ${new Date().toUTCString().replace("GMT", "+0000")}`,
+      `Message-ID: <${Date.now()}.${Math.random().toString(36).slice(2)}@kohkae-status>`,
+      "MIME-Version: 1.0", "Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: base64", "",
+      b64(body).replace(/.{76}/g, "$&\r\n"),
+    ].join("\r\n");
+    // [รหัสตอบกลับที่ต้องได้, คำสั่งถัดไป]
+    const steps = [[220, "EHLO kohkae-status"], [250, "AUTH LOGIN"], [334, b64(cfg.sender)], [334, b64(cfg.pass)],
+      [235, `MAIL FROM:<${cfg.sender}>`], ...cfg.to.map((t) => [250, `RCPT TO:<${t}>`]),
+      [250, "DATA"], [354, msg + "\r\n."], [250, "QUIT"]];
+    let i = 0, buf = "", done = false;
+    const finish = (err) => { if (done) return; done = true; err ? reject(err) : resolve(); };
+    const sock = tls.connect({ host: "smtp.gmail.com", port: 465, servername: "smtp.gmail.com" });
+    sock.setTimeout(20000, () => sock.destroy(new Error("SMTP ไม่ตอบภายใน 20 วิ")));
+    sock.on("error", (e) => finish(new Error(e.message)));
+    sock.on("close", () => finish(new Error("SMTP ปิดการเชื่อมต่อก่อนส่งเสร็จ")));
+    sock.on("data", (d) => {
+      buf += d.toString("utf8");
+      const lines = buf.split("\r\n"); buf = lines.pop();
+      for (const line of lines) {
+        if (!/^\d{3}( |$)/.test(line)) continue;           // บรรทัด "250-..." = ยังไม่จบคำตอบ
+        const code = parseInt(line, 10);
+        const [want, next] = steps[i++] || [];
+        if (code !== want) {
+          sock.destroy();
+          return finish(new Error(code === 535 ? "อีเมล/App Password ไม่ถูกต้อง" : `SMTP ตอบ ${code}`));
+        }
+        sock.write(next + "\r\n");
+        if (next === "QUIT") { finish(); sock.end(); return; }   // ส่งเมลสำเร็จแล้ว
+      }
+    });
+  });
+}
+
+function scheduledOff() {   // ช่วงปิดตามเวลาของ checkprogram\scheduler.py ไม่แจ้ง (กันแจ้งล่มมั่ว)
+  try {
+    const st = JSON.parse(fs.readFileSync(path.join(CHECK_DIR, "system_state.json"), "utf8")).state;
+    return ["closed", "closing", "opening"].includes(st);
+  } catch (_) { return false; }
+}
+function mailOut(cfg, subject, body) {
+  sendMail(cfg, subject, body)
+    .then(() => console.log("[STATUS] ส่งอีเมลแล้ว: " + subject))
+    .catch((e) => console.error("[STATUS] ส่งอีเมลไม่สำเร็จ: " + e.message));
+}
+function mailAlerts() {
+  const cfg = mailCfg();
+  if (!cfg.enabled) return;
+  if (scheduledOff()) { for (const k of Object.keys(mailed)) delete mailed[k]; return; }
+  const when = `${thDate(dayTh())} ${nowTh()}`;
+  for (const [id, level] of Object.entries(MAIL_IDS)) {
+    const cur = last[id];
+    if (!cur) continue;
+    if (RANK[cur.st] >= RANK[level] && !mailed[id]) {
+      if (Date.now() - (lastMail[id] || 0) < cfg.cooldownMs) continue;
+      mailed[id] = true; lastMail[id] = Date.now();
+      mailOut(cfg, `[แจ้งเตือน] ${NAMES[id]} ${cur.st === "down" ? "ล่ม" : "มีปัญหา"}`,
+        `${NAMES[id]}: ${cur.detail}\nเวลา: ${when}\nดูสถานะ: http://localhost:${PORT}`);
+    } else if (cur.st === "ok" && mailed[id]) {
+      delete mailed[id];
+      mailOut(cfg, `[กลับมาปกติ] ${NAMES[id]}`, `${NAMES[id]} กลับมาทำงานแล้ว\nเวลา: ${when}`);
+    }
+  }
+}
+
 let lastRun = null;
-async function runChecks() {
-  await Promise.all([checkScanAndCamera(), checkApi(), checkOracle()]);
-  checkDisk(); checkBackup();
+// หลังเช็คแต่ละส่วนเสร็จ: บันทึกเหตุการณ์ที่เปลี่ยน → แจ้งอีเมล → ส่งเข้าหน้าเว็บทันที
+function commit() {
   lastRun = new Date();
   for (const id of Object.keys(NAMES)) {
     const s = last[id] && last[id].st;
+    if (s === undefined) continue;
     if (prevSt[id] !== undefined && s !== prevSt[id]) {
       const text = s === "ok" ? `${NAMES[id]} กลับมาปกติ`
         : s === "warn" ? `${NAMES[id]}: ${last[id].detail}`
@@ -149,6 +261,27 @@ async function runChecks() {
     }
     prevSt[id] = s;
   }
+  try { mailAlerts(); } catch (e) { console.error("[STATUS] mail error:", e.message); }
+  broadcast();
+}
+// วนเช็คแยกกัน: ส่วนที่ช้า (Oracle) ไม่หน่วงส่วนที่เร็ว · รอบก่อนยังไม่เสร็จ = ข้ามรอบนี้ (ไม่ซ้อน)
+function loop(fn, ms) {
+  let busy = false;
+  const tick = async () => {
+    if (busy) return;
+    busy = true;
+    try { await fn(); } catch (e) { console.error("[STATUS] check error:", e.message); }
+    finally { busy = false; }
+    commit();
+  };
+  tick();
+  setInterval(tick, ms);
+}
+function startChecks() {
+  loop(checkScanAndCamera, FAST_MS);
+  loop(checkApi, API_MS);
+  loop(checkOracle, ORACLE_MS);
+  loop(async () => { checkDisk(); checkBackup(); }, SLOW_MS);
 }
 
 function snapshot() {
@@ -163,10 +296,29 @@ function snapshot() {
 
 // ── หน้าเว็บ ───────────────────────────────────────────────────────────
 const PAGE = fs.readFileSync(path.join(__dirname, "status_page.html"), "utf8");
+// ส่งสถานะเข้าหน้าเว็บสดๆ (Server-Sent Events) ไม่ต้องรอหน้าเว็บมาถามทุก 5 วิ
+const clients = new Set();
+let lastPush = { json: "", at: 0 };
+function broadcast() {
+  if (!clients.size) return;
+  const snap = snapshot();
+  const json = JSON.stringify(snap);
+  const key = JSON.stringify([snap.overall, snap.items, snap.events[0] && snap.events[0].at]);
+  if (key === lastPush.json && Date.now() - lastPush.at < 1000) return;   // ไม่เปลี่ยน = ส่งแค่วิละครั้ง (นาฬิกา)
+  lastPush = { json: key, at: Date.now() };
+  for (const c of clients) c.write(`data: ${json}\n\n`);
+}
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const server = http.createServer((req, res) => {
   const url = (req.url || "/").split("?")[0];
   if (req.method !== "GET") { res.writeHead(405); return res.end(); }
+  if (url === "/api/stream") {
+    res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store", Connection: "keep-alive" });
+    res.write(`retry: 2000\n\ndata: ${JSON.stringify(snapshot())}\n\n`);
+    clients.add(res);
+    req.on("close", () => clients.delete(res));
+    return;
+  }
   if (url === "/api/status") {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
     return res.end(JSON.stringify(snapshot()));
@@ -181,6 +333,12 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
     return res.end(`<!doctype html><meta charset="utf-8"><title>log ส่วนสแกน</title><body style="margin:0;background:#14161A;color:#E8E6E1;font:13px/1.5 Consolas,monospace"><div style="padding:16px 20px;font-family:'Leelawadee UI',Tahoma,sans-serif;font-size:15px">detection.log · 300 บรรทัดล่าสุด · <a style="color:#9CC7FF" href="/">กลับหน้าสถานะ</a></div><pre style="margin:0;padding:0 20px 20px;white-space:pre-wrap">${esc(text)}</pre><script>scrollTo(0,document.body.scrollHeight)</script></body>`);
   }
+  if (url === "/status_page.css") {
+    let css = "";
+    try { css = fs.readFileSync(path.join(__dirname, "status_page.css"), "utf8"); } catch (_) {}
+    res.writeHead(200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "no-store" });
+    return res.end(css);
+  }
   if (url === "/" || url === "/index.html") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
     return res.end(PAGE);
@@ -188,12 +346,20 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end("not found");
 });
 
-server.on("error", (e) => { console.error("[STATUS] เปิดพอร์ต " + PORT + " ไม่ได้: " + e.message); process.exit(1); });
-server.listen(PORT, HOST, async () => {
-  console.log(`[STATUS] หน้าสถานะพร้อม http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`);
-  addEvent("ok", "เริ่มตัวเช็คสถานะ");
-  await runChecks();
-  setInterval(() => runChecks().catch((e) => console.error("[STATUS] check error:", e.message)), INTERVAL_MS);
-});
+if (process.argv.includes("--test-email")) {
+  const cfg = mailCfg();
+  if (!cfg.valid) { console.error("[STATUS] ตั้งค่า EMAIL_* ใน " + path.join(CHECK_DIR, ".env") + " ไม่ครบ/ไม่ถูกต้อง"); process.exit(1); }
+  sendMail(cfg, "[ทดสอบ] หน้าสถานะระบบ KohKae", "ถ้าได้รับเมลนี้ แปลว่าหน้าสถานะ (8090) ส่งแจ้งเตือนทางอีเมลได้แล้ว")
+    .then(() => { console.log("ส่งแล้ว → " + cfg.to.join(", ")); process.exit(0); })
+    .catch((e) => { console.error("ส่งไม่สำเร็จ: " + e.message); process.exit(1); });
+} else {
+  server.on("error", (e) => { console.error("[STATUS] เปิดพอร์ต " + PORT + " ไม่ได้: " + e.message); process.exit(1); });
+  server.listen(PORT, HOST, async () => {
+    console.log(`[STATUS] หน้าสถานะพร้อม http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`);
+    addEvent("ok", "เริ่มตัวเช็คสถานะ");
+    startChecks();
+  });
+}
+
 const stop = async () => { try { await quiet(db.closePool)(); } catch (_) {} process.exit(0); };
 process.on("SIGINT", stop); process.on("SIGTERM", stop);

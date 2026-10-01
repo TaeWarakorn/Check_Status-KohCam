@@ -6,48 +6,7 @@
 <title>สถานะระบบ KohKae</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{--bg:#14161A;--card:#1D2026;--line:#2C313A;--text:#E8E6E1;--muted:#A3A9B0;--soft:#C9CDD2;--link:#9CC7FF;
-    --ok-dot:#3FB950;--ok-fg:#7EE787;--ok-bg:#12301C;--warn-dot:#E3B341;--warn-fg:#F2CC60;--warn-bg:#33280F;
-    --down-dot:#F85149;--down-fg:#FF9B95;--down-bg:#3A1618;--unk-dot:#8B949E;--unk-fg:#C9CDD2;--unk-bg:#2A2F38}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans Thai","Leelawadee UI",Tahoma,sans-serif}
-  .mono{font-family:"IBM Plex Mono",Consolas,monospace}
-  .wrap{max-width:1280px;margin:0 auto;padding:40px 48px;display:flex;flex-direction:column;gap:28px}
-  header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
-  .brand{font-size:15px;color:var(--muted);letter-spacing:.02em}
-  h1{margin:6px 0 0;font-size:34px;font-weight:700}
-  .right{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-  .pill{display:inline-flex;align-items:center;gap:10px;padding:10px 18px;border-radius:999px;font-size:17px;font-weight:600}
-  .pill.sm{gap:8px;padding:5px 12px;font-size:14px;white-space:nowrap}
-  .dot{width:12px;height:12px;border-radius:999px;flex:none}
-  .pill.sm .dot{width:9px;height:9px}
-  .s-ok{background:var(--ok-bg);color:var(--ok-fg)} .s-ok .dot{background:var(--ok-dot)}
-  .s-warn{background:var(--warn-bg);color:var(--warn-fg)} .s-warn .dot{background:var(--warn-dot)}
-  .s-down{background:var(--down-bg);color:var(--down-fg)} .s-down .dot{background:var(--down-dot)}
-  .s-unknown{background:var(--unk-bg);color:var(--unk-fg)} .s-unknown .dot{background:var(--unk-dot)}
-  .upd{font-size:14px;color:var(--muted);text-align:right;line-height:1.5}
-  .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;display:flex;flex-direction:column;gap:14px}
-  .card.down{border-color:#6E2A2A} .card.warn{border-color:#5C4A1E}
-  .top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-  .name{font-size:19px;font-weight:600} .sub{font-size:13px;color:var(--muted)}
-  .detail{font-size:15px;color:var(--soft)}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 24px;display:flex;flex-direction:column;gap:4px}
-  .ph{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
-  h2{margin:0;font-size:18px;font-weight:600}
-  .btns{display:flex;gap:10px;flex-wrap:wrap}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;font-size:15px;text-decoration:none;min-height:44px}
-  .btn.ghost{border:1px solid #3A404A;color:var(--text)} .btn.ghost:hover{background:#262A31}
-  .btn.primary{background:#2F6FEB;color:#fff} .btn.primary:hover{background:#2560D3}
-  .ev{display:grid;grid-template-columns:150px 16px minmax(0,1fr);align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:15px}
-  .ev .t{color:var(--muted);font-size:14px} .ev .dot{width:10px;height:10px}
-  .ev.s-ok,.ev.s-warn,.ev.s-down,.ev.s-unknown{background:none;color:var(--text)}
-  .empty{color:var(--muted);padding:10px 0;border-top:1px solid var(--line)}
-  .stale{display:none;padding:12px 16px;border-radius:10px;background:var(--down-bg);color:var(--down-fg);font-size:15px}
-  @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.wrap{padding:24px 16px}}
-  @media (max-width:600px){.grid{grid-template-columns:minmax(0,1fr)}.ev{grid-template-columns:110px 16px minmax(0,1fr)}h1{font-size:28px}}
-</style>
+<link rel="stylesheet" href="/status_page.css">
 </head>
 <body>
 <div class="wrap">
@@ -55,7 +14,7 @@
     <div><div class="brand">KohKae Camera Plate</div><h1>สถานะระบบ</h1></div>
     <div class="right">
       <div id="overall" class="pill s-unknown"><span class="dot"></span><span id="overallText">กำลังเช็ค…</span></div>
-      <div class="upd mono">อัปเดต <span id="upd">--:--:--</span><br>รีเฟรชเองทุก 5 วินาที</div>
+      <div class="upd mono">อัปเดต <span id="upd">--:--:--</span><br>สด · เช็คทุก 1 วินาที</div>
     </div>
   </header>
   <div id="stale" class="stale">ติดต่อตัวเช็คสถานะไม่ได้ — ข้อมูลบนหน้านี้อาจไม่ใช่ล่าสุด</div>
@@ -81,37 +40,42 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const pill = (st, text, small) => { const p = el("div", "pill " + (small ? "sm " : "") + "s-" + st); p.append(el("span", "dot"), el("span", null, text)); return p; };
 document.getElementById("mainLink").href = location.protocol + "//" + location.hostname + ":5173";
 const thDay = (iso) => { const d = new Date(iso); return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", timeZone: "Asia/Bangkok" }); };
-async function refresh() {
-  try {
-    const r = await fetch("/api/status", { cache: "no-store" });
-    const s = await r.json();
-    document.getElementById("stale").style.display = "none";
-    const o = document.getElementById("overall");
-    o.className = "pill s-" + s.overall.st;
-    document.getElementById("overallText").textContent = s.overall.text;
-    document.getElementById("upd").textContent = s.updatedTh || "--:--:--";
-    document.title = (s.overall.st === "ok" ? "🟢" : s.overall.st === "warn" ? "🟡" : "🔴").replace(/./u, "") + "สถานะระบบ KohKae";
-    const g = document.getElementById("grid"); g.replaceChildren();
-    for (const it of s.items) {
-      const c = el("div", "card " + it.st);
-      const top = el("div", "top"); const left = el("div");
-      left.append(el("div", "name", it.name), el("div", "sub mono", it.sub));
-      top.append(left, pill(it.st, LABEL[it.st] || it.st, true));
-      c.append(top, el("div", "detail", it.detail));
-      g.append(c);
-    }
-    const ev = document.getElementById("events"); ev.replaceChildren();
-    if (!s.events.length) ev.append(el("div", "empty", "ยังไม่มีเหตุการณ์"));
-    for (const e of s.events.slice(0, 12)) {
-      const row = el("div", "ev s-" + e.st);
-      row.append(el("span", "t mono", thDay(e.at) + " " + e.time), el("span", "dot"), el("span", null, e.text));
-      ev.append(row);
-    }
-  } catch (e) {
-    document.getElementById("stale").style.display = "block";
+let lastMsg = Date.now();
+function render(s) {
+  lastMsg = Date.now();
+  document.getElementById("stale").style.display = "none";
+  const o = document.getElementById("overall");
+  o.className = "pill s-" + s.overall.st;
+  document.getElementById("overallText").textContent = s.overall.text;
+  document.getElementById("upd").textContent = s.updatedTh || "--:--:--";
+  document.title = (s.overall.st === "ok" ? "🟢" : s.overall.st === "warn" ? "🟡" : "🔴").replace(/./u, "") + "สถานะระบบ KohKae";
+  const g = document.getElementById("grid"); g.replaceChildren();
+  for (const it of s.items) {
+    const c = el("div", "card " + it.st);
+    const top = el("div", "top"); const left = el("div");
+    left.append(el("div", "name", it.name), el("div", "sub mono", it.sub));
+    top.append(left, pill(it.st, LABEL[it.st] || it.st, true));
+    c.append(top, el("div", "detail", it.detail));
+    g.append(c);
+  }
+  const ev = document.getElementById("events"); ev.replaceChildren();
+  if (!s.events.length) ev.append(el("div", "empty", "ยังไม่มีเหตุการณ์"));
+  for (const e of s.events.slice(0, 12)) {
+    const row = el("div", "ev s-" + e.st);
+    row.append(el("span", "t mono", thDay(e.at) + " " + e.time), el("span", "dot"), el("span", null, e.text));
+    ev.append(row);
   }
 }
-refresh(); setInterval(refresh, 5000);
+// รับสถานะสดจาก server (SSE) · ต่อใหม่เองถ้าหลุด · เบราว์เซอร์ไม่รองรับ → ถามทุก 2 วิแทน
+if (window.EventSource) {
+  const es = new EventSource("/api/stream");
+  es.onmessage = (e) => { try { render(JSON.parse(e.data)); } catch (_) {} };
+} else {
+  const poll = async () => { try { render(await (await fetch("/api/status", { cache: "no-store" })).json()); } catch (_) {} };
+  poll(); setInterval(poll, 2000);
+}
+// ไม่ได้ข้อมูลใหม่เกิน 5 วิ = ติดต่อตัวเช็คไม่ได้
+setInterval(() => { if (Date.now() - lastMsg > 5000) document.getElementById("stale").style.display = "block"; }, 1000);
 </script>
 </body>
 </html>
