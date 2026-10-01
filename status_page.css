@@ -37,5 +37,14 @@ h2{margin:0;font-size:18px;font-weight:600}
 .ev.s-ok,.ev.s-warn,.ev.s-down,.ev.s-unknown{background:none;color:var(--text)}
 .empty{color:var(--muted);padding:10px 0;border-top:1px solid var(--line)}
 .stale{display:none;padding:12px 16px;border-radius:10px;background:var(--down-bg);color:var(--down-fg);font-size:15px}
+/* เครื่องมือผู้ดูแล */
+button.btn{font:inherit;background:none;cursor:pointer}
+button.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.arm{border-color:var(--warn-dot);color:var(--warn-fg);background:var(--warn-bg)}
+.arow{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.alabel{color:var(--muted);font-size:15px}
+.note{color:var(--muted);font-size:14px}
+.amsg{min-height:22px;font-size:15px;padding-top:8px} .amsg.ok{color:var(--ok-fg)} .amsg.bad{color:var(--down-fg)}
+.ev.s-admin{background:none;color:var(--text)} .s-admin .dot{background:#6CA0F6}
 @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.wrap{padding:24px 16px}}
-@media (max-width:600px){.grid{grid-template-columns:minmax(0,1fr)}.ev{grid-template-columns:110px 16px minmax(0,1fr)}h1{font-size:28px}}
+@media (max-width:600px){.arow{grid-template-columns:minmax(0,1fr)}.grid{grid-template-columns:minmax(0,1fr)}.ev{grid-template-columns:110px 16px minmax(0,1fr)}h1{font-size:28px}}

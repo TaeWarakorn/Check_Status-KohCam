@@ -33,6 +33,16 @@
     </div>
     <div id="events"></div>
   </section>
+  <section class="panel" id="admin">
+    <div class="ph"><h2>เครื่องมือผู้ดูแล</h2><span class="note" id="adminNote"></span></div>
+    <div class="arow"><div class="alabel">เปิดใหม่</div><div class="btns" id="restartBtns"></div></div>
+    <div class="arow"><div class="alabel">งานอื่น</div><div class="btns">
+      <button class="btn ghost" type="button" data-act="backup">สำรองข้อมูลตอนนี้</button>
+      <button class="btn ghost" type="button" data-act="test-email" id="mailBtn">ส่งอีเมลทดสอบ</button>
+    </div></div>
+    <div class="arow"><div class="alabel">ดู log</div><div class="btns" id="logLinks"></div></div>
+    <div class="amsg" id="adminMsg" role="status" aria-live="polite"></div>
+  </section>
 </div>
 <script>
 const LABEL = { ok: "ปกติ", warn: "มีปัญหา", down: "ล่ม", unknown: "ไม่ทราบ" };
@@ -74,6 +84,44 @@ if (window.EventSource) {
   const poll = async () => { try { render(await (await fetch("/api/status", { cache: "no-store" })).json()); } catch (_) {} };
   poll(); setInterval(poll, 2000);
 }
+// ── เครื่องมือผู้ดูแล: กดครั้งแรก = ถามยืนยัน, กดซ้ำภายใน 4 วิ = ทำจริง ──
+const actBtn = (label, act) => { const b = el("button", "btn ghost", label); b.type = "button"; b.dataset.act = act; b.dataset.label = label; return b; };
+async function loadAdmin() {
+  let info;
+  try { info = await (await fetch("/api/admin", { cache: "no-store" })).json(); } catch (_) { return; }
+  document.getElementById("restartBtns").replaceChildren(...info.services.map((s) => actBtn(s.name, "restart/" + s.id)));
+  document.getElementById("logLinks").replaceChildren(...info.logs.map((l) => {
+    const a = el("a", "btn ghost", l.name); a.href = "/log?f=" + l.id; a.target = "_blank"; a.rel = "noopener"; return a;
+  }));
+  if (info.email.to.length) document.getElementById("mailBtn").title = "ส่งถึง " + info.email.to.join(", ");
+  if (!info.canAct) {
+    document.querySelectorAll("#admin [data-act]").forEach((b) => { b.disabled = true; });
+    document.getElementById("adminNote").textContent = "สั่งงานได้เฉพาะจากเครื่องที่รันระบบ";
+  }
+}
+let armed = null, armTimer = null;
+const disarm = () => { if (armed) { armed.textContent = armed.dataset.label; armed.classList.remove("arm"); armed = null; } };
+document.getElementById("admin").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button[data-act]");
+  if (!b || b.disabled) return;
+  if (!b.dataset.label) b.dataset.label = b.textContent.trim();
+  if (armed !== b) {
+    disarm();
+    armed = b; b.textContent = "กดอีกครั้งเพื่อยืนยัน"; b.classList.add("arm");
+    clearTimeout(armTimer); armTimer = setTimeout(disarm, 4000);
+    return;
+  }
+  clearTimeout(armTimer); armed = null; b.classList.remove("arm");
+  b.textContent = "กำลังทำ…"; b.disabled = true;
+  const msg = document.getElementById("adminMsg");
+  try {
+    const r = await fetch("/api/admin/" + b.dataset.act, { method: "POST", headers: { "X-KohKae-Admin": "1" } });
+    const j = await r.json();
+    msg.textContent = j.msg; msg.className = "amsg " + (j.ok ? "ok" : "bad");
+  } catch (_) { msg.textContent = "ติดต่อตัวเช็คไม่ได้"; msg.className = "amsg bad"; }
+  b.textContent = b.dataset.label; b.disabled = false;
+});
+loadAdmin();
 // ไม่ได้ข้อมูลใหม่เกิน 5 วิ = ติดต่อตัวเช็คไม่ได้
 setInterval(() => { if (Date.now() - lastMsg > 5000) document.getElementById("stale").style.display = "block"; }, 1000);
 </script>

@@ -245,6 +245,112 @@ function mailAlerts() {
   }
 }
 
+// ── เครื่องมือผู้ดูแล · เพิ่ม 1 ต.ค. 2569 ─────────────────────────────────
+// สั่งได้เฉพาะจากเครื่องที่รันระบบ (127.0.0.1) จนกว่าจะมีหน้าเข้าสู่ระบบ
+// เปิดใหม่ = ปิด process ที่ถือพอร์ต แล้วให้ตัวเฝ้าใน start-services.ps1 เปิดกลับให้เอง (~3 วิ)
+const { execFile, spawn } = require("child_process");
+const SERVICES = {
+  scan: { port: 8000, name: "ส่วนสแกนป้าย" },
+  api: { port: 5000, name: "ส่วนบันทึกข้อมูล" },
+  web: { port: 5173, name: "หน้าเว็บหลัก" },
+};
+const LOGS = {
+  scan: { name: "ส่วนสแกนป้าย", file: LOG_FILE },
+  backup: { name: "สำรองข้อมูล", file: path.join(ROOT, "backups", "nightly.log") },
+  monitor: { name: "ตัวเฝ้าระบบ (monitor)", file: path.join(CHECK_DIR, "monitor.log") },
+};
+const RESTART_GAP_MS = 30000;
+const lastRestart = {};
+let backupBusy = false;
+
+const LOCAL_ADDRS = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+const isLocalReq = (req) => LOCAL_ADDRS.has(req.socket.remoteAddress);
+// กันเว็บอื่นในเบราว์เซอร์แอบยิงคำสั่ง: ต้องมีหัว X-KohKae-Admin และ Origin (ถ้ามี) ต้องเป็นหน้านี้เอง
+function canAct(req) {
+  if (!isLocalReq(req) || req.headers["x-kohkae-admin"] !== "1") return false;
+  const o = req.headers.origin;
+  return !o || o === `http://${req.headers.host}`;
+}
+function maskSecrets(text) {
+  let t = String(text).replace(/(rtsp|rtsps|https?):\/\/[^\/\s]*@/gi, "$1://***@")   // ถึง @ ตัวสุดท้าย (รหัสอาจมี @);
+  const pass = mailCfg().pass;
+  if (pass) t = t.split(pass).join("***");
+  return t;
+}
+function pidsOnPort(port) {
+  return new Promise((resolve) => {
+    execFile("netstat", ["-ano"], { windowsHide: true }, (err, out) => {
+      if (err) return resolve([]);
+      const pids = new Set();
+      for (const line of String(out).split(/\r?\n/)) {
+        const c = line.trim().split(/\s+/);
+        if (c[0] === "TCP" && c[3] === "LISTENING" && c[1].endsWith(":" + port) && /^\d+$/.test(c[4]) && c[4] !== "0") pids.add(c[4]);
+      }
+      resolve([...pids]);
+    });
+  });
+}
+const killPid = (pid) => new Promise((resolve) => execFile("taskkill", ["/PID", pid, "/T", "/F"], { windowsHide: true }, (err) => resolve(!err)));
+
+async function adminRestart(id) {
+  const svc = SERVICES[id];
+  if (!svc) return { ok: false, msg: "ไม่รู้จักส่วนนี้" };
+  const wait = RESTART_GAP_MS - (Date.now() - (lastRestart[id] || 0));
+  if (wait > 0) return { ok: false, msg: `${svc.name} เพิ่งสั่งเปิดใหม่ไป รออีก ${Math.ceil(wait / 1000)} วิ` };
+  const pids = await pidsOnPort(svc.port);
+  if (!pids.length) return { ok: false, msg: `${svc.name} ไม่ได้เปิดอยู่ (พอร์ต ${svc.port}) · ตัวเฝ้าจะเปิดให้เอง ถ้าระบบเปิดผ่าน run.bat` };
+  lastRestart[id] = Date.now();
+  for (const pid of pids) await killPid(pid);
+  addEvent("admin", `ผู้ดูแลสั่งเปิด${svc.name}ใหม่`);
+  broadcast();
+  return { ok: true, msg: `ปิด${svc.name}แล้ว · ระบบจะเปิดกลับเองในไม่กี่วินาที` };
+}
+function adminBackup() {
+  if (backupBusy) return { ok: false, msg: "กำลังสำรองข้อมูลอยู่" };
+  const script = path.join(DB_DIR, "backup_nightly.js");
+  if (!fs.existsSync(script)) return { ok: false, msg: "ไม่พบ backup_nightly.js" };
+  backupBusy = true;
+  addEvent("admin", "ผู้ดูแลสั่งสำรองข้อมูลทันที");
+  broadcast();
+  const child = spawn(process.execPath, [script], { cwd: DB_DIR, windowsHide: true, stdio: "ignore" });
+  const done = (code) => {
+    if (!backupBusy) return;
+    backupBusy = false;
+    checkBackup();
+    if (code === 0) addEvent("ok", "สำรองข้อมูลเสร็จ");
+    else if (code === 2) addEvent("warn", "สำรองข้อมูลเสร็จ แต่มีเรื่องที่ควรดู (เปิด log สำรองข้อมูล)");
+    else addEvent("down", `สำรองข้อมูลไม่สำเร็จ (exit ${code})`);
+    broadcast();
+  };
+  child.on("exit", done);
+  child.on("error", () => done(-1));
+  return { ok: true, msg: "เริ่มสำรองข้อมูลแล้ว · เสร็จแล้วจะขึ้นในเหตุการณ์ล่าสุด" };
+}
+async function adminTestEmail() {
+  const cfg = mailCfg();
+  if (!cfg.valid) return { ok: false, msg: "ตั้งค่าอีเมลใน checkprogram\\.env ไม่ครบ" };
+  try {
+    await sendMail(cfg, "[ทดสอบ] หน้าสถานะระบบ KohKae", "ผู้ดูแลกดส่งอีเมลทดสอบจากหน้าสถานะ (8090)\nเวลา: " + `${thDate(dayTh())} ${nowTh()}`);
+    addEvent("admin", "ผู้ดูแลส่งอีเมลทดสอบถึง " + cfg.to.join(", "));
+    broadcast();
+    return { ok: true, msg: "ส่งแล้ว → " + cfg.to.join(", ") };
+  } catch (e) { return { ok: false, msg: "ส่งไม่สำเร็จ: " + e.message }; }
+}
+function adminInfo(req) {
+  const cfg = mailCfg();
+  return { canAct: isLocalReq(req), backupBusy, email: { enabled: cfg.enabled, to: cfg.to },
+           services: Object.entries(SERVICES).map(([id, s]) => ({ id, name: s.name, port: s.port })),
+           logs: Object.entries(LOGS).map(([id, l]) => ({ id, name: l.name })) };
+}
+function readTail(file, lines = 300) {
+  const fd = fs.openSync(file, "r");
+  try {
+    const size = fs.fstatSync(fd).size, n = Math.min(size, 120000);
+    const buf = Buffer.alloc(n); fs.readSync(fd, buf, 0, n, size - n);
+    return buf.toString("utf8").split("\n").slice(-lines).join("\n");
+  } finally { fs.closeSync(fd); }
+}
+
 let lastRun = null;
 // หลังเช็คแต่ละส่วนเสร็จ: บันทึกเหตุการณ์ที่เปลี่ยน → แจ้งอีเมล → ส่งเข้าหน้าเว็บทันที
 function commit() {
@@ -310,8 +416,21 @@ function broadcast() {
 }
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const server = http.createServer((req, res) => {
-  const url = (req.url || "/").split("?")[0];
+  const u = new URL(req.url || "/", "http://localhost");
+  const url = u.pathname;
+  const json = (code, obj) => { res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); res.end(JSON.stringify(obj)); };
+  if (req.method === "POST" && url.startsWith("/api/admin/")) {
+    if (!canAct(req)) return json(403, { ok: false, msg: "สั่งงานได้เฉพาะจากเครื่องที่รันระบบ" });
+    const parts = url.split("/");   // ["", "api", "admin", action, id]
+    const run = parts[3] === "restart" ? adminRestart(parts[4])
+      : parts[3] === "backup" ? adminBackup()
+      : parts[3] === "test-email" ? adminTestEmail()
+      : { ok: false, msg: "ไม่รู้จักคำสั่งนี้" };
+    Promise.resolve(run).then((r) => json(r.ok ? 200 : 409, r)).catch((e) => json(500, { ok: false, msg: e.message }));
+    return;
+  }
   if (req.method !== "GET") { res.writeHead(405); return res.end(); }
+  if (url === "/api/admin") return json(200, adminInfo(req));
   if (url === "/api/stream") {
     res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store", Connection: "keep-alive" });
     res.write(`retry: 2000\n\ndata: ${JSON.stringify(snapshot())}\n\n`);
@@ -324,14 +443,13 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify(snapshot()));
   }
   if (url === "/log") {
+    const which = LOGS[u.searchParams.get("f")] ? u.searchParams.get("f") : "scan";
+    const lg = LOGS[which];
     let text = "";
-    try {
-      const fd = fs.openSync(LOG_FILE, "r"); const size = fs.fstatSync(fd).size; const n = Math.min(size, 120000);
-      const buf = Buffer.alloc(n); fs.readSync(fd, buf, 0, n, size - n); fs.closeSync(fd);
-      text = buf.toString("utf8").split("\n").slice(-300).join("\n");
-    } catch (e) { text = "เปิดไฟล์ log ไม่ได้: " + e.message; }
+    try { text = maskSecrets(readTail(lg.file)); } catch (e) { text = "เปิดไฟล์ log ไม่ได้: " + e.message; }
+    const tabs = Object.entries(LOGS).map(([id, l]) => id === which ? `<b>${esc(l.name)}</b>` : `<a style="color:#9CC7FF" href="/log?f=${id}">${esc(l.name)}</a>`).join(" · ");
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-    return res.end(`<!doctype html><meta charset="utf-8"><title>log ส่วนสแกน</title><body style="margin:0;background:#14161A;color:#E8E6E1;font:13px/1.5 Consolas,monospace"><div style="padding:16px 20px;font-family:'Leelawadee UI',Tahoma,sans-serif;font-size:15px">detection.log · 300 บรรทัดล่าสุด · <a style="color:#9CC7FF" href="/">กลับหน้าสถานะ</a></div><pre style="margin:0;padding:0 20px 20px;white-space:pre-wrap">${esc(text)}</pre><script>scrollTo(0,document.body.scrollHeight)</script></body>`);
+    return res.end(`<!doctype html><meta charset="utf-8"><title>log ${esc(lg.name)}</title><body style="margin:0;background:#14161A;color:#E8E6E1;font:13px/1.5 Consolas,monospace"><div style="padding:16px 20px;font-family:'Leelawadee UI',Tahoma,sans-serif;font-size:15px;display:flex;flex-wrap:wrap;gap:12px">${tabs} <span style="color:#A3A9B0">· ${esc(path.basename(lg.file))} 300 บรรทัดล่าสุด ·</span> <a style="color:#9CC7FF" href="/">กลับหน้าสถานะ</a></div><pre style="margin:0;padding:0 20px 20px;white-space:pre-wrap">${esc(text)}</pre><script>scrollTo(0,document.body.scrollHeight)</script></body>`);
   }
   if (url === "/status_page.css") {
     let css = "";
