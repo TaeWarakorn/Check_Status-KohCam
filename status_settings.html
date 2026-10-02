@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตั้งค่า · สถานะระบบ KohKae</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/status_page.css">
+</head>
+<body>
+<div class="wrap narrow">
+  <header>
+    <div><div class="brand">KohKae Camera Plate</div><h1>ตั้งค่าหน้าสถานะ</h1></div>
+    <div class="right"><a class="btn ghost" href="/">กลับหน้าสถานะ</a></div>
+  </header>
+  <div id="blocked" class="stale">ตั้งค่าได้เฉพาะจากเครื่องที่รันระบบ</div>
+  <form id="form" novalidate></form>
+  <div class="savebar" id="savebar" hidden>
+    <div class="amsg" id="msg" role="status" aria-live="polite"></div>
+    <div class="btns">
+      <button class="btn ghost" type="button" id="restartBtn" hidden>เปิดหน้าสถานะใหม่ตอนนี้</button>
+      <button class="btn primary" type="submit" form="form" id="saveBtn">บันทึก</button>
+    </div>
+  </div>
+</div>
+<script>
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const post = (path, body) => fetch("/api/admin/" + path, { method: "POST", headers: { "X-KohKae-Admin": "1", "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }).then((r) => r.json());
+const msg = document.getElementById("msg");
+const say = (text, ok) => { msg.textContent = text; msg.className = "amsg " + (ok ? "ok" : "bad"); };
+const inputs = {};
+
+function fieldRow(f) {
+  const row = el("label", "frow" + (f.type === "bool" ? " check" : ""));
+  const text = el("span", "flabel", f.label);
+  let input;
+  if (f.type === "bool") {
+    input = el("input"); input.type = "checkbox";
+    input.checked = /^(1|true|yes|on)$/i.test(f.value === "" ? f.def : f.value);
+    row.append(input, text);
+  } else {
+    input = el("input", "finput" + (f.type === "number" ? " mono" : ""));
+    input.type = f.type === "secret" ? "password" : f.type === "number" ? "number" : "text";
+    if (f.type === "number") { input.min = "0"; input.step = "any"; }
+    if (f.type === "secret") { input.autocomplete = "new-password"; input.placeholder = f.isSet ? "ตั้งไว้แล้ว — เว้นว่างถ้าไม่เปลี่ยน" : "ยังไม่ได้ตั้ง"; }
+    else { input.value = f.value; if (f.def) input.placeholder = "ค่าเริ่มต้น " + f.def; }
+    row.append(text, input);
+  }
+  input.name = f.key;
+  inputs[f.key] = { input, f };
+  if (f.help) row.append(el("span", "fhelp", f.help));
+  row.append(el("span", "ferr"));
+  return row;
+}
+
+async function load() {
+  const r = await fetch("/api/admin/settings", { cache: "no-store" });
+  if (r.status === 403) { document.getElementById("blocked").style.display = "block"; return; }
+  const info = await r.json();
+  const form = document.getElementById("form");
+  const groups = {};
+  for (const f of info.fields) {
+    if (!groups[f.group]) {
+      const sec = el("section", "panel");
+      sec.append(el("h2", null, f.group));
+      groups[f.group] = sec; form.append(sec);
+    }
+    groups[f.group].append(fieldRow(f));
+  }
+  // ปุ่มทดสอบ + ค่าที่วัดได้จริง
+  const cam = groups["กล้อง"], mail = groups["อีเมลแจ้งเตือน"], img = groups["ตรวจคุณภาพภาพกล้อง"];
+  if (cam) {
+    const b = el("button", "btn ghost", "ทดสอบต่อกล้อง"); b.type = "button";
+    b.onclick = async () => { const j = await post("test-camera", { host: inputs.CAMERA_HOST.input.value, port: inputs.CAMERA_PORT.input.value }); say(j.msg, j.ok); };
+    const d = el("div", "btns ftest"); d.append(b); cam.append(d);
+  }
+  if (mail) {
+    const b = el("button", "btn ghost", "ส่งอีเมลทดสอบ (ใช้ค่าที่บันทึกแล้ว)"); b.type = "button";
+    b.onclick = async () => { b.disabled = true; say("กำลังส่ง…", true); const j = await post("test-email"); say(j.msg, j.ok); b.disabled = false; };
+    const d = el("div", "btns ftest"); d.append(b); mail.append(d);
+  }
+  if (img) img.append(el("div", "fnow mono", info.image
+    ? `ค่าที่วัดได้ตอนนี้ — สว่าง ${info.image.brightness} · ความต่างสี ${info.image.contrast} · ความคม ${info.image.sharpness}`
+    : "ยังไม่มีค่าที่วัดได้ (ส่วนสแกนปิดอยู่ หรือปิดการตรวจภาพ)"));
+  document.getElementById("savebar").hidden = false;
+}
+
+document.getElementById("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const values = {};
+  for (const [key, { input, f }] of Object.entries(inputs)) values[key] = f.type === "bool" ? (input.checked ? "true" : "false") : input.value;
+  document.querySelectorAll(".ferr").forEach((e) => { e.textContent = ""; });
+  let j;
+  try { j = await post("settings", { values }); } catch (_) { return say("ติดต่อตัวเช็คไม่ได้", false); }
+  say(j.msg, j.ok);
+  if (j.errors) for (const [key, text] of Object.entries(j.errors)) inputs[key].input.closest(".frow").querySelector(".ferr").textContent = text;
+  document.getElementById("restartBtn").hidden = !(j.ok && j.needRestart);
+});
+document.getElementById("restartBtn").addEventListener("click", async () => {
+  say("กำลังเปิดหน้าสถานะใหม่…", true);
+  try { await post("restart-self"); } catch (_) {}
+  for (let i = 0; i < 30; i++) {   // รอให้กลับมา (ตัวเฝ้าเปิดให้ใน ~3 วิ)
+    await new Promise((r) => setTimeout(r, 1000));
+    try { if ((await fetch("/api/status", { cache: "no-store" })).ok) { location.reload(); return; } } catch (_) {}
+  }
+  say("หน้าสถานะยังไม่กลับมา — ตรวจว่าระบบเปิดผ่าน run.bat อยู่หรือไม่", false);
+});
+load().catch(() => say("โหลดค่าตั้งไม่ได้", false));
+</script>
+</body>
+</html>

@@ -46,5 +46,22 @@ button.btn:disabled{opacity:.45;cursor:not-allowed}
 .note{color:var(--muted);font-size:14px}
 .amsg{min-height:22px;font-size:15px;padding-top:8px} .amsg.ok{color:var(--ok-fg)} .amsg.bad{color:var(--down-fg)}
 .ev.s-admin{background:none;color:var(--text)} .s-admin .dot{background:#6CA0F6}
+/* หน้าตั้งค่า */
+.wrap.narrow{max-width:820px}
+.panel h2{margin-bottom:6px}
+.frow{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:4px 16px;align-items:center;padding:12px 0;border-top:1px solid var(--line);font-size:15px}
+.frow.check{grid-template-columns:24px minmax(0,1fr);cursor:pointer}
+.frow.check input{width:20px;height:20px;accent-color:#2F6FEB}
+.finput{width:100%;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid #3A404A;background:#14161A;color:var(--text);font:inherit;font-size:15px}
+.finput:focus{outline:2px solid #2F6FEB;outline-offset:1px}
+.fhelp{grid-column:1/-1;color:var(--muted);font-size:13px}
+.frow.check .fhelp,.frow.check .ferr{grid-column:2}
+.ferr{grid-column:1/-1;color:var(--down-fg);font-size:13px}
+.ferr:empty{display:none}
+.ftest{padding:12px 0 4px;border-top:1px solid var(--line)}
+.fnow{padding:12px 0 4px;border-top:1px solid var(--line);font-size:13px;color:var(--soft)}
+.savebar{position:sticky;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px;border-radius:14px;background:#262A31;border:1px solid var(--line)}
+.savebar[hidden]{display:none}
+.savebar .amsg{padding:0}
 @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.wrap{padding:24px 16px}}
-@media (max-width:600px){.arow{grid-template-columns:minmax(0,1fr)}.grid{grid-template-columns:minmax(0,1fr)}.ev{grid-template-columns:110px 16px minmax(0,1fr)}h1{font-size:28px}}
+@media (max-width:600px){.frow{grid-template-columns:minmax(0,1fr)}.arow{grid-template-columns:minmax(0,1fr)}.grid{grid-template-columns:minmax(0,1fr)}.ev{grid-template-columns:110px 16px minmax(0,1fr)}h1{font-size:28px}}
