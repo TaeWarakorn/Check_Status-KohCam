@@ -22,8 +22,35 @@ const envStr = (k, d) => (process.env[k] ? process.env[k] : d);
 const envNum = (k, d) => { const n = parseFloat(process.env[k]); return Number.isFinite(n) ? n : d; };
 
 // โปรแกรมนี้อยู่นอกโปรเจกต์ (Desktop\statusprogram) ชี้ไปที่ Myproject ที่อยู่ข้างกัน — เปลี่ยนได้ด้วย MYPROJECT_DIR
-const ROOT = envStr("MYPROJECT_DIR", path.resolve(__dirname, "..", "Myproject"));
+// หาโฟลเดอร์ระบบหลักเอง: MYPROJECT_DIR ใน .env → ..\Myproject → โฟลเดอร์ข้าง ๆ ที่มี database\db.js (เช่น iNotV10)
+function findProject() {
+  if (process.env.MYPROJECT_DIR) return process.env.MYPROJECT_DIR;
+  const parent = path.resolve(__dirname, "..");
+  const isProject = (d) => fs.existsSync(path.join(d, "database", "db.js"));
+  if (isProject(path.join(parent, "Myproject"))) return path.join(parent, "Myproject");
+  let best = null, bestTime = -1;
+  try {
+    for (const name of fs.readdirSync(parent)) {
+      const d = path.join(parent, name);
+      if (d === __dirname || !isProject(d)) continue;
+      let t = 0; try { t = fs.statSync(path.join(d, "database", ".env")).mtimeMs; } catch (_) {}
+      if (t > bestTime) { best = d; bestTime = t; }
+    }
+  } catch (_) {}
+  return best || path.join(parent, "Myproject");
+}
+const ROOT = findProject();
 const DB_DIR = path.join(ROOT, "database");
+if (!fs.existsSync(path.join(DB_DIR, "db.js"))) {
+  console.error("[STATUS] ไม่พบระบบหลัก (โฟลเดอร์ที่มี database\\db.js) — มองหาที่ " + ROOT + "\n         วางโฟลเดอร์นี้ไว้ข้างระบบหลัก หรือใส่ MYPROJECT_DIR=<ที่อยู่ระบบหลัก> ในไฟล์ .env");
+  process.exit(1);
+}
+// ค่า Oracle ต้องเป็นของระบบหลัก (database\.env) เสมอ — ถ้า .env ของหน้าสถานะมี ORACLE_* ค้างอยู่ ไม่ให้มาทับ
+{
+  const own = readEnvFile(OWN_ENV_FILE), main = readEnvFile(path.join(DB_DIR, ".env"));
+  for (const k of ["ORACLE_USER", "ORACLE_PASSWORD", "ORACLE_CONNECT_STRING"])
+    if (main[k] && own[k] !== undefined && process.env[k] === own[k]) delete process.env[k];
+}
 for (const p of [path.join(DB_DIR, ".env"), path.join(ROOT, "backend", ".env")])
   require(path.join(DB_DIR, "node_modules", "dotenv")).config({ path: p, quiet: true });
 process.env.ORACLE_POOL_MIN = "0";
