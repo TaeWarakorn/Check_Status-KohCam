@@ -4,32 +4,46 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ตั้งค่า · สถานะระบบ KohKae</title>
+<script>try { if (localStorage.getItem("kohkae-status-theme") === "light") document.documentElement.dataset.theme = "light"; } catch (_) {}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/status_page.css">
 </head>
 <body>
-<div class="wrap narrow">
-  <header>
-    <div><div class="brand">KohKae Camera Plate</div><h1>ตั้งค่าหน้าสถานะ</h1></div>
-    <div class="right"><a class="btn ghost" href="/">กลับหน้าสถานะ</a></div>
-  </header>
-  <div id="blocked" class="stale">ตั้งค่าได้เฉพาะจากเครื่องที่รันระบบ</div>
-  <form id="form" novalidate></form>
-  <div class="savebar" id="savebar" hidden>
-    <div class="amsg" id="msg" role="status" aria-live="polite"></div>
-    <div class="btns">
-      <button class="btn ghost" type="button" id="restartBtn" hidden>เปิดหน้าสถานะใหม่ตอนนี้</button>
-      <button class="btn primary" type="submit" form="form" id="saveBtn">บันทึก</button>
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brandbox">
+      <img class="logo" src="/status_logo.png" alt="Koh-Kae Cameraplate">
+      <span class="tag">ตั้งค่าหน้าสถานะ</span>
+    </div>
+    <div class="topbtns">
+      <a class="hbtn solid" href="/">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+        กลับหน้าสถานะ</a>
     </div>
   </div>
-</div>
+</header>
+<main class="wrap setwrap">
+  <div id="blocked" class="stale">ตั้งค่าได้เฉพาะจากเครื่องที่รันระบบ</div>
+  <nav class="snav" id="nav" aria-label="หมวดการตั้งค่า" hidden></nav>
+  <div class="sform">
+    <form id="form" class="sgroups" novalidate></form>
+    <div class="savebar" id="savebar" hidden>
+      <div class="amsg" id="msg" role="status" aria-live="polite"></div>
+      <div class="btns">
+        <button class="btn" type="button" id="restartBtn" hidden>เปิดหน้าสถานะใหม่ตอนนี้</button>
+        <button class="btn save" type="submit" form="form" id="saveBtn">บันทึก</button>
+      </div>
+    </div>
+  </div>
+</main>
 <script>
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const post = (path, body) => fetch("/api/admin/" + path, { method: "POST", headers: { "X-KohKae-Admin": "1", "Content-Type": "application/json" }, body: JSON.stringify(body || {}) }).then((r) => r.json());
 const msg = document.getElementById("msg");
 const say = (text, ok) => { msg.textContent = text; msg.className = "amsg " + (ok ? "ok" : "bad"); };
 const inputs = {};
+const GROUP_ID = { "กล้อง": "gcam", "อีเมลแจ้งเตือน": "gmail", "เสียงเตือน": "gsound", "เกณฑ์เตือน": "glimit", "ตรวจคุณภาพภาพกล้อง": "gimage", "ซ่อมตัวเอง": "gheal" };
 
 function fieldRow(f) {
   const row = el("label", "frow" + (f.type === "bool" ? " check" : ""));
@@ -38,7 +52,7 @@ function fieldRow(f) {
   if (f.type === "bool") {
     input = el("input"); input.type = "checkbox";
     input.checked = /^(1|true|yes|on)$/i.test(f.value === "" ? f.def : f.value);
-    row.append(input, text);
+    text.className = "flabel"; row.append(input, text);
   } else {
     input = el("input", "finput" + (f.type === "number" ? " mono" : ""));
     input.type = f.type === "secret" ? "password" : f.type === "number" ? "number" : "text";
@@ -59,28 +73,57 @@ async function load() {
   if (r.status === 403) { document.getElementById("blocked").style.display = "block"; return; }
   const info = await r.json();
   const form = document.getElementById("form");
-  const groups = {};
+  const groups = {}, grids = {}, counts = {};
   for (const f of info.fields) {
     if (!groups[f.group]) {
       const sec = el("section", "panel");
-      sec.append(el("h2", null, f.group));
-      groups[f.group] = sec; form.append(sec);
+      sec.id = GROUP_ID[f.group] || "g" + Object.keys(groups).length;
+      const head = el("div", "ph"); head.append(el("h2", null, f.group));
+      const grid = el("div", "fgrid");
+      sec.append(head, grid);
+      groups[f.group] = sec; grids[f.group] = grid; counts[f.group] = 0; form.append(sec);
     }
-    groups[f.group].append(fieldRow(f));
+    grids[f.group].append(fieldRow(f)); counts[f.group]++;
   }
+  // เมนูหมวดด้านซ้าย
+  const nav = document.getElementById("nav");
+  for (const [name, sec] of Object.entries(groups)) {
+    const a = el("a", null, name); a.href = "#" + sec.id; a.append(el("span", null, counts[name] + " ค่า")); nav.append(a);
+  }
+  nav.hidden = false;
+  if (location.hash) { const t = document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); }
   // ปุ่มทดสอบ + ค่าที่วัดได้จริง
   const cam = groups["กล้อง"], mail = groups["อีเมลแจ้งเตือน"], img = groups["ตรวจคุณภาพภาพกล้อง"];
   if (cam) {
-    const b = el("button", "btn ghost", "ทดสอบต่อกล้อง"); b.type = "button";
+    const b = el("button", "btn", "ทดสอบต่อกล้อง"); b.type = "button";
     b.onclick = async () => { const j = await post("test-camera", { host: inputs.CAMERA_HOST.input.value, port: inputs.CAMERA_PORT.input.value }); say(j.msg, j.ok); };
-    const d = el("div", "btns ftest"); d.append(b); cam.append(d);
+    cam.querySelector(".ph").append(b);
+  }
+  const snd = groups["เสียงเตือน"];
+  if (snd && inputs.SOUND_FILE) {
+    // เลือกเสียงจากรายการของ Windows + ลองฟังก่อนบันทึก
+    const fileInput = inputs.SOUND_FILE.input;
+    const sel = el("select", "finput");
+    sel.setAttribute("aria-label", "เลือกเสียงจากรายการของ Windows");
+    const opt = (text, value) => { const o = el("option", null, text); o.value = value; return o; };
+    sel.append(opt("เสียงเริ่มต้น (Alarm01)", ""));
+    for (const sd of info.sounds || []) sel.append(opt(sd.name, sd.path));
+    sel.append(opt("ไฟล์อื่น — พิมพ์ที่อยู่เองในช่องด้านล่าง", "__custom"));
+    const sync = () => { sel.value = [...sel.options].some((o) => o.value === fileInput.value) ? fileInput.value : "__custom"; };
+    sync();
+    sel.onchange = () => { if (sel.value !== "__custom") fileInput.value = sel.value; else fileInput.focus(); };
+    fileInput.addEventListener("input", sync);
+    fileInput.before(sel);
+    const b = el("button", "btn", "ฟังเสียงนี้"); b.type = "button";
+    b.onclick = async () => { b.disabled = true; say("กำลังเล่นเสียง…", true); const j = await post("test-sound", { file: fileInput.value }); say(j.msg, j.ok); b.disabled = false; };
+    snd.querySelector(".ph").append(b);
   }
   if (mail) {
-    const b = el("button", "btn ghost", "ส่งอีเมลทดสอบ (ใช้ค่าที่บันทึกแล้ว)"); b.type = "button";
+    const b = el("button", "btn", "ส่งอีเมลทดสอบ (ใช้ค่าที่บันทึกแล้ว)"); b.type = "button";
     b.onclick = async () => { b.disabled = true; say("กำลังส่ง…", true); const j = await post("test-email"); say(j.msg, j.ok); b.disabled = false; };
-    const d = el("div", "btns ftest"); d.append(b); mail.append(d);
+    mail.querySelector(".ph").append(b);
   }
-  if (img) img.append(el("div", "fnow mono", info.image
+  if (img) img.querySelector(".ph").after(el("div", "fnow mono", info.image
     ? `ค่าที่วัดได้ตอนนี้ — สว่าง ${info.image.brightness} · ความต่างสี ${info.image.contrast} · ความคม ${info.image.sharpness}`
     : "ยังไม่มีค่าที่วัดได้ (ส่วนสแกนปิดอยู่ หรือปิดการตรวจภาพ)"));
   document.getElementById("savebar").hidden = false;

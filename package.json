@@ -1,0 +1,8 @@
+{
+  "name": "checkstatus-kohcam",
+  "version": "1.0.0",
+  "description": "หน้าสถานะระบบ KohKae (กล้อง / ส่วนสแกน / API / Oracle / ดิสก์ / สำรองข้อมูล)",
+  "main": "status_server.js",
+  "scripts": { "start": "node status_server.js" },
+  "dependencies": { "oracledb": "^6.6.0" }
+}

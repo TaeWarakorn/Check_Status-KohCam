@@ -488,6 +488,7 @@ async function adminTestEmail() {
 function adminInfo(req) {
   const cfg = mailCfg();
   return { canAct: isLocalReq(req), backupBusy, email: { enabled: cfg.enabled, to: cfg.to },
+           features: { sound: SOUND.enabled, imageCheck: IMAGE_CHECK, healOn: Object.values(HEAL).filter(Boolean).length, healTotal: Object.keys(HEAL).length },
            services: Object.entries(SERVICES).map(([id, s]) => ({ id, name: s.name, port: s.port })),
            logs: Object.entries(LOGS).map(([id, l]) => ({ id, name: l.name })) };
 }
@@ -603,6 +604,10 @@ const SETTINGS = [
   F("อีเมลแจ้งเตือน", "EMAIL_APP_PASSWORD", "App Password (16 หลัก)", "secret", "", "สร้างที่ myaccount.google.com/apppasswords"),
   F("อีเมลแจ้งเตือน", "EMAIL_TO", "ส่งถึง", "emails", "", "หลายคนคั่นด้วยจุลภาค ,"),
   F("อีเมลแจ้งเตือน", "ALERT_COOLDOWN_MINUTES", "ส่วนเดิมแจ้งซ้ำได้หลังกี่นาที", "number", 60),
+  F("เสียงเตือน", "SOUND_ENABLED", "เปิดเสียงเตือนที่เครื่องนี้", "bool", true, "ดังจากลำโพงของเครื่องที่รันหน้าสถานะ ไม่ต้องเปิดเบราว์เซอร์ค้างไว้"),
+  F("เสียงเตือน", "SOUND_ON_WARN", "ดังตั้งแต่เป็นสีเหลือง (ไม่รอให้แดง)", "bool", false),
+  F("เสียงเตือน", "SOUND_REPEAT_SECONDS", "ดังซ้ำทุกกี่วินาทีจนกว่าจะกดรับทราบ", "number", 30, "0 = ดังครั้งเดียว"),
+  F("เสียงเตือน", "SOUND_FILE", "ไฟล์เสียง .wav ที่ใช้", "text", "", "เว้นว่าง = เสียง Alarm01 ของ Windows"),
   F("เกณฑ์เตือน", "DOWN_AFTER_SECONDS", "มีปัญหานานกี่วินาทีถึงเป็นสีแดง", "number", 60, "ครบแล้วส่งอีเมลด้วย"),
   F("เกณฑ์เตือน", "DISK_WARN_GB", "ดิสก์เหลือน้อยกว่ากี่ GB = เหลือง", "number", 15),
   F("เกณฑ์เตือน", "DISK_DOWN_GB", "ดิสก์เหลือน้อยกว่ากี่ GB = แดง", "number", 5),
@@ -625,6 +630,7 @@ const MAIL_RE = /^[^@\s,<>]+@[^@\s,<>]+\.[^@\s,<>]+$/;
 function settingsInfo() {
   const own = readEnvFile(OWN_ENV_FILE);
   return { fields: SETTINGS.map((f) => f.type === "secret" ? { ...f, value: "", isSet: !!own[f.key] } : { ...f, value: own[f.key] !== undefined ? own[f.key] : "" }),
+           sounds: listSounds(),
            image: image && image.ok ? { brightness: image.brightness, contrast: image.contrast, sharpness: image.sharpness } : null };
 }
 function settingsSave(values) {
@@ -680,6 +686,73 @@ function readBody(req, limit = 65536) {
   });
 }
 
+// ── เสียงเตือน · เพิ่ม 2 ต.ค. 2569 ───────────────────────────────────────
+// ดังจากลำโพงของเครื่องที่รันหน้าสถานะ (ไม่ได้ดังจากหน้าเว็บ) → ย่อ/ปิดเบราว์เซอร์แล้วก็ยังดัง
+// ดังเมื่อส่วนไหนแย่ถึงระดับเดียวกับที่ส่งอีเมล (MAIL_IDS) แล้วดังซ้ำเป็นระยะจนกว่าจะหาย หรือมีคนกด "รับทราบ"
+const SOUND = { enabled: envBool("SOUND_ENABLED", true), onWarn: envBool("SOUND_ON_WARN", false),
+                repeatMs: envNum("SOUND_REPEAT_SECONDS", 30) * 1000, file: envStr("SOUND_FILE", "") };
+const alarm = { bad: new Set(), acked: new Set(), lastAt: 0, playing: false };
+const SOUND_PS = [
+  "$f = $env:KOHKAE_SOUND_FILE",
+  "if (-not $f -or -not (Test-Path -LiteralPath $f)) { $f = Join-Path $env:WINDIR 'Media\\Alarm01.wav' }",
+  "if (Test-Path -LiteralPath $f) { (New-Object System.Media.SoundPlayer $f).PlaySync() }",
+  "else { 1..4 | ForEach-Object { [console]::Beep(1200, 350); Start-Sleep -Milliseconds 150 } }",
+].join("; ");
+// เสียง .wav ที่มากับ Windows (C:\\Windows\\Media) — ให้หน้าตั้งค่าเลือก/ลองฟังได้
+function listSounds() {
+  const dir = path.join(process.env.WINDIR || "C:\\Windows", "Media");
+  try {
+    return fs.readdirSync(dir).filter((f) => /\.wav$/i.test(f))
+      .sort((a, b) => (/^alarm/i.test(b) - /^alarm/i.test(a)) || (/^ring/i.test(b) - /^ring/i.test(a)) || a.localeCompare(b, "en", { numeric: true }))
+      .map((f) => ({ name: f.replace(/\.wav$/i, ""), path: path.join(dir, f) }));
+  } catch (_) { return []; }
+}
+function playSound(file) {
+  if (file !== undefined && file !== "") {   // ลองฟังไฟล์ที่ยังไม่ได้บันทึก
+    if (!/\.wav$/i.test(file)) return Promise.resolve({ ok: false, msg: "ใช้ได้เฉพาะไฟล์ .wav" });
+    if (!fs.existsSync(file)) return Promise.resolve({ ok: false, msg: "ไม่พบไฟล์เสียงนี้: " + file });
+  }
+  const useFile = file !== undefined ? file : SOUND.file;
+  return new Promise((resolve) => {
+    if (process.platform !== "win32") return resolve({ ok: false, msg: "เล่นเสียงได้เฉพาะบน Windows" });
+    if (alarm.playing) return resolve({ ok: true, msg: "กำลังเล่นเสียงอยู่" });
+    alarm.playing = true; alarm.lastAt = Date.now();
+    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", SOUND_PS],
+      { windowsHide: true, timeout: 60000, env: { ...process.env, KOHKAE_SOUND_FILE: useFile } },
+      (err) => {
+        alarm.playing = false; alarm.lastAt = Date.now();
+        if (err) console.error("[STATUS] เล่นเสียงเตือนไม่ได้: " + String(err.message).split("\n")[0]);
+        resolve(err ? { ok: false, msg: "เล่นเสียงไม่ได้ — ดูหน้าต่าง run.bat" } : { ok: true, msg: "เล่นเสียงเตือนแล้ว (ถ้าไม่ได้ยิน ให้เช็คระดับเสียง/ลำโพงของเครื่อง)" });
+      });
+  });
+}
+const soundLevel = (id) => (SOUND.onWarn ? "warn" : MAIL_IDS[id] || "down");
+const isAlarming = (id, st) => st === "down" || (st === "warn" && soundLevel(id) === "warn");
+const ringing = () => [...alarm.bad].filter((id) => !alarm.acked.has(id));
+function soundAlerts() {
+  if (!SOUND.enabled) return;
+  let fresh = false;
+  for (const id of Object.keys(NAMES)) {
+    const st = last[id] && last[id].st;
+    if (st === undefined) continue;
+    if (isAlarming(id, st)) { if (!alarm.bad.has(id)) { alarm.bad.add(id); fresh = true; } }
+    else if (st === "ok" || st === "warn") { alarm.bad.delete(id); alarm.acked.delete(id); }   // "ไม่ทราบ" = ยังไม่ถือว่าหาย
+  }
+  if (fresh) playSound();
+}
+// ดังซ้ำเป็นระยะระหว่างที่ยังมีส่วนที่ไม่มีใครรับทราบ (SOUND_REPEAT_SECONDS=0 = ดังครั้งเดียว)
+if (SOUND.enabled && SOUND.repeatMs > 0) setInterval(() => {
+  if (ringing().length && !alarm.playing && Date.now() - alarm.lastAt >= SOUND.repeatMs) playSound();
+}, 1000).unref();
+function adminAckSound() {
+  const ids = ringing();
+  if (!ids.length) return { ok: true, msg: "ไม่มีเสียงเตือนค้างอยู่" };
+  for (const id of ids) alarm.acked.add(id);
+  addEvent("admin", "ผู้ดูแลรับทราบเสียงเตือน: " + ids.map((id) => NAMES[id]).join(", "));
+  broadcast();
+  return { ok: true, msg: "ปิดเสียงแล้ว — จะดังอีกครั้งถ้ามีส่วนอื่นล่มเพิ่ม หรือส่วนเดิมหายแล้วกลับมาล่มใหม่" };
+}
+
 let lastRun = null;
 // หลังเช็คแต่ละส่วนเสร็จ: บันทึกเหตุการณ์ที่เปลี่ยน → แจ้งอีเมล → ส่งเข้าหน้าเว็บทันที
 function commit() {
@@ -697,6 +770,7 @@ function commit() {
     prevSt[id] = s;
   }
   try { mailAlerts(); } catch (e) { console.error("[STATUS] mail error:", e.message); }
+  try { soundAlerts(); } catch (e) { console.error("[STATUS] sound error:", e.message); }
   runHeals();
   broadcast();
 }
@@ -728,7 +802,8 @@ function snapshot() {
     : warn.length ? { st: "warn", text: warn.length === 1 ? `${warn[0].name} มีปัญหา` : `${warn.length} ส่วนมีปัญหา` }
     : { st: "ok", text: "ทุกส่วนทำงานปกติ" };
   return { updated: lastRun ? lastRun.toISOString() : null, updatedTh: lastRun ? lastRun.toLocaleTimeString("en-GB", { timeZone: "Asia/Bangkok", hour12: false }) : null,
-           overall, items, events: events.slice(0, 30), mainUiPort: MAIN_UI_PORT };
+           overall, items, events: events.slice(0, 30), mainUiPort: MAIN_UI_PORT,
+           sound: { enabled: SOUND.enabled, ringing: ringing().map((id) => NAMES[id]) } };
 }
 
 // ── หน้าเว็บ ───────────────────────────────────────────────────────────
@@ -740,7 +815,7 @@ function broadcast() {
   if (!clients.size) return;
   const snap = snapshot();
   const json = JSON.stringify(snap);
-  const key = JSON.stringify([snap.overall, snap.items, snap.events[0] && snap.events[0].at]);
+  const key = JSON.stringify([snap.overall, snap.items, snap.events[0] && snap.events[0].at, snap.sound]);
   if (key === lastPush.json && Date.now() - lastPush.at < 1000) return;   // ไม่เปลี่ยน = ส่งแค่วิละครั้ง (นาฬิกา)
   lastPush = { json: key, at: Date.now() };
   for (const c of clients) c.write(`data: ${json}\n\n`);
@@ -759,6 +834,8 @@ const server = http.createServer((req, res) => {
       : parts[3] === "test-camera" ? adminTestCamera(body)
       : parts[3] === "settings" ? settingsSave(body.values)
       : parts[3] === "restart-self" ? adminRestartSelf()
+      : parts[3] === "test-sound" ? playSound(typeof body.file === "string" ? body.file.trim() : undefined)
+      : parts[3] === "ack-sound" ? adminAckSound()
       : { ok: false, msg: "ไม่รู้จักคำสั่งนี้" })
       .then((r) => json(r.ok ? 200 : 409, r)).catch((e) => json(500, { ok: false, msg: e.message }));
     return;
@@ -791,6 +868,13 @@ const server = http.createServer((req, res) => {
     const tabs = Object.entries(LOGS).map(([id, l]) => id === which ? `<b>${esc(l.name)}</b>` : `<a style="color:#9CC7FF" href="/log?f=${id}">${esc(l.name)}</a>`).join(" · ");
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
     return res.end(`<!doctype html><meta charset="utf-8"><title>log ${esc(lg.name)}</title><body style="margin:0;background:#14161A;color:#E8E6E1;font:13px/1.5 Consolas,monospace"><div style="padding:16px 20px;font-family:'Leelawadee UI',Tahoma,sans-serif;font-size:15px;display:flex;flex-wrap:wrap;gap:12px">${tabs} <span style="color:#A3A9B0">· ${esc(path.basename(lg.file))} 300 บรรทัดล่าสุด ·</span> <a style="color:#9CC7FF" href="/">กลับหน้าสถานะ</a></div><pre style="margin:0;padding:0 20px 20px;white-space:pre-wrap">${esc(text)}</pre><script>scrollTo(0,document.body.scrollHeight)</script></body>`);
+  }
+  if (url === "/status_logo.png") {   // โลโก้เดียวกับโปรแกรมหลัก (frontend\public\assets\brand-lockup.png)
+    try {
+      const img = fs.readFileSync(path.join(__dirname, "status_logo.png"));
+      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "max-age=3600" });
+      return res.end(img);
+    } catch (_) { res.writeHead(404); return res.end(); }
   }
   if (url === "/status_page.css") {
     let css = "";

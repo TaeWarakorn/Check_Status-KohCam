@@ -4,78 +4,192 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>สถานะระบบ KohKae</title>
+<script>try { if (localStorage.getItem("kohkae-status-theme") === "light") document.documentElement.dataset.theme = "light"; } catch (_) {}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/status_page.css">
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div><div class="brand">KohKae Camera Plate</div><h1>สถานะระบบ</h1></div>
-    <div class="right">
-      <div id="overall" class="pill s-unknown"><span class="dot"></span><span id="overallText">กำลังเช็ค…</span></div>
-      <div class="upd mono">อัปเดต <span id="upd">--:--:--</span><br>สด · เช็คทุก 1 วินาที</div>
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brandbox">
+      <img class="logo" src="/status_logo.png" alt="Koh-Kae Cameraplate">
+      <span class="tag">หน้าสถานะ</span>
     </div>
-  </header>
-  <div id="stale" class="stale">ติดต่อตัวเช็คสถานะไม่ได้ — ข้อมูลบนหน้านี้อาจไม่ใช่ล่าสุด</div>
-  <section id="grid" class="grid" aria-live="polite"></section>
-  <section class="panel">
-    <div class="ph">
-      <h2>เหตุการณ์ล่าสุด</h2>
-      <div class="btns">
-        <a class="btn ghost" href="/log" target="_blank" rel="noopener">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>
-          เปิด log</a>
-        <a class="btn primary" id="mainLink" href="#" target="_blank" rel="noopener">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-          เปิดหน้าระบบหลัก</a>
+    <div class="topbtns">
+      <button class="hbtn" type="button" id="themeBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M12 7h6.5M12 12h9M12 17h6.5"/></svg>
+        <span id="themeText">โทนมืด</span></button>
+      <a class="hbtn" href="/settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h10M18 18h2"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="18" r="2"/></svg>
+        ตั้งค่า</a>
+      <a class="hbtn solid" id="mainLink" href="#" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+        เปิดหน้าระบบหลัก</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="stale" class="stale" role="alert">ติดต่อตัวเช็คสถานะไม่ได้ — ข้อมูลบนหน้านี้อาจไม่ใช่ล่าสุด</div>
+
+  <section id="banner" class="banner s-unknown" aria-live="polite">
+    <div class="bicon" aria-hidden="true">
+      <svg class="i-ok" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      <svg class="i-warn" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v7M12 17.5v.5"/></svg>
+      <svg class="i-down" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+    </div>
+    <div class="btext">
+      <h1 id="overallText">กำลังเช็ค…</h1>
+      <div class="bsub" id="overallSub"></div>
+      <div class="live mono"><i></i><span>สด · เช็คทุก 1 วินาที · อัปเดต <span id="upd">--:--:--</span></span></div>
+    </div>
+    <button class="btn ack" type="button" id="ackBtn" hidden>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M3 3l18 18"/></svg>
+      รับทราบ · ปิดเสียง</button>
+    <div class="counts">
+      <div class="chip"><span class="mk ok"></span>ปกติ <b id="nOk">0</b></div>
+      <div class="chip"><span class="mk warn"></span>มีปัญหา <b id="nWarn">0</b></div>
+      <div class="chip"><span class="mk down"></span>ล่ม <b id="nDown">0</b></div>
+    </div>
+  </section>
+
+  <section class="chips" id="features" aria-label="ระบบอัตโนมัติ" hidden>
+    <a class="chip" href="/settings#gsound">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      เสียงเตือน <b id="fSound"></b></a>
+    <a class="chip" href="/settings#gmail">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+      แจ้งเตือนทางอีเมล <b id="fMail"></b></a>
+    <a class="chip" href="/settings#gheal">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6.5a4 4 0 0 0-5.3 5.3L3 18l3 3 6.2-6.2a4 4 0 0 0 5.3-5.3l-2.7 2.7-2.3-.7-.7-2.3z"/></svg>
+      ซ่อมตัวเอง <b id="fHeal"></b></a>
+    <a class="chip" href="/settings#gimage">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg>
+      ตรวจคุณภาพภาพกล้อง <b id="fImage"></b></a>
+  </section>
+
+  <section id="grid" class="grid" aria-label="สถานะแต่ละส่วน"></section>
+
+  <div class="cols">
+    <section class="panel p-events">
+      <div class="ph">
+        <h2>เหตุการณ์ล่าสุด</h2>
+        <div class="btns">
+          <button class="btn on" type="button" id="fAll" aria-pressed="true">ทั้งหมด</button>
+          <button class="btn" type="button" id="fBad" aria-pressed="false">เฉพาะปัญหา</button>
+        </div>
       </div>
-    </div>
-    <div id="events"></div>
-  </section>
-  <section class="panel" id="admin">
-    <div class="ph"><h2>เครื่องมือผู้ดูแล</h2><span class="note" id="adminNote"></span><a class="btn ghost" href="/settings">ตั้งค่า</a></div>
-    <div class="arow"><div class="alabel">เปิดใหม่</div><div class="btns" id="restartBtns"></div></div>
-    <div class="arow"><div class="alabel">งานอื่น</div><div class="btns">
-      <button class="btn ghost" type="button" data-act="backup">สำรองข้อมูลตอนนี้</button>
-      <button class="btn ghost" type="button" data-act="test-email" id="mailBtn">ส่งอีเมลทดสอบ</button>
-    </div></div>
-    <div class="arow"><div class="alabel">ดู log</div><div class="btns" id="logLinks"></div></div>
-    <div class="amsg" id="adminMsg" role="status" aria-live="polite"></div>
-  </section>
-</div>
+      <div id="events"></div>
+    </section>
+
+    <section class="panel p-admin" id="admin">
+      <div>
+        <h2>เครื่องมือผู้ดูแล</h2>
+        <div class="note" id="adminNote">ปุ่มสั่งงานต้องกด 2 ครั้งเพื่อยืนยัน</div>
+      </div>
+      <div class="agroup"><div class="alabel">เปิดใหม่</div><div class="btns" id="restartBtns"></div></div>
+      <div class="agroup"><div class="alabel">งานอื่น</div><div class="btns">
+        <button class="btn" type="button" data-act="backup">สำรองข้อมูลตอนนี้</button>
+        <button class="btn" type="button" data-act="test-email" id="mailBtn">ส่งอีเมลทดสอบ</button>
+        <button class="btn" type="button" data-act="test-sound">ทดสอบเสียงเตือน</button>
+      </div></div>
+      <div class="amsg" id="adminMsg" role="status" aria-live="polite"></div>
+      <div class="agroup sep"><div class="alabel">ดู log</div><div class="btns" id="logLinks"></div></div>
+    </section>
+  </div>
+</main>
+
 <script>
 const LABEL = { ok: "ปกติ", warn: "มีปัญหา", down: "ล่ม", unknown: "ไม่ทราบ" };
+// คำแนะนำสั้น ๆ ตอนส่วนนั้นมีปัญหา
+const TIP = {
+  camera: "เช็คสายแลนและไฟของกล้อง ถ้าภาพมืด/เบลอ ให้เช็ดเลนส์และดูว่ามีอะไรบังกล้องหรือไม่",
+  scan: "กดปุ่ม “ส่วนสแกนป้าย” ในเครื่องมือผู้ดูแลเพื่อเปิดใหม่ แล้วดู log ส่วนสแกนป้าย",
+  api: "กดปุ่ม “ส่วนบันทึกข้อมูล” ในเครื่องมือผู้ดูแลเพื่อเปิดใหม่",
+  oracle: "เช็คว่าเครื่องฐานข้อมูลเปิดอยู่ และเครื่องนี้ต่อวงแลนถึงกันได้",
+  disk: "ลบหรือย้ายไฟล์ภาพเก่าออกจากไดรฟ์ C:",
+  backup: "กด “สำรองข้อมูลตอนนี้” แล้วดู log สำรองข้อมูล",
+};
+const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-const pill = (st, text, small) => { const p = el("div", "pill " + (small ? "sm " : "") + "s-" + st); p.append(el("span", "dot"), el("span", null, text)); return p; };
-document.getElementById("mainLink").href = location.protocol + "//" + location.hostname + ":5173";
-const thDay = (iso) => { const d = new Date(iso); return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", timeZone: "Asia/Bangkok" }); };
-let lastMsg = Date.now();
-function render(s) {
-  lastMsg = Date.now();
-  document.getElementById("stale").style.display = "none";
-  const o = document.getElementById("overall");
-  o.className = "pill s-" + s.overall.st;
-  document.getElementById("overallText").textContent = s.overall.text;
-  document.getElementById("upd").textContent = s.updatedTh || "--:--:--";
-  document.title = (s.overall.st === "ok" ? "🟢" : s.overall.st === "warn" ? "🟡" : "🔴").replace(/./u, "") + "สถานะระบบ KohKae";
-  const g = document.getElementById("grid"); g.replaceChildren();
-  for (const it of s.items) {
-    const c = el("div", "card " + it.st);
-    const top = el("div", "top"); const left = el("div");
-    left.append(el("div", "name", it.name), el("div", "sub mono", it.sub));
-    top.append(left, pill(it.st, LABEL[it.st] || it.st, true));
-    c.append(top, el("div", "detail", it.detail));
-    g.append(c);
+const thDay = (iso) => new Date(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short", timeZone: "Asia/Bangkok" });
+$("mainLink").href = location.protocol + "//" + location.hostname + ":5173";
+
+// ── สลับโทนมืด/สว่าง (จำไว้ในเครื่องนี้) ──
+const root = document.documentElement;
+const showTheme = () => { $("themeText").textContent = root.dataset.theme === "light" ? "โทนสว่าง" : "โทนมืด"; };
+$("themeBtn").addEventListener("click", () => {
+  if (root.dataset.theme === "light") delete root.dataset.theme; else root.dataset.theme = "light";
+  try { localStorage.setItem("kohkae-status-theme", root.dataset.theme || "dark"); } catch (_) {}
+  showTheme();
+});
+showTheme();
+
+// ── แสดงสถานะ ──
+let lastMsg = Date.now(), lastState = null, onlyBad = false;
+function card(it) {
+  const c = el("article", "card s-" + it.st);
+  const top = el("div", "top"), left = el("div");
+  left.append(el("div", "name", it.name), el("div", "sub mono", it.sub));
+  const p = el("div", "pill"); p.append(el("i"), el("span", null, LABEL[it.st] || it.st));
+  top.append(left, p);
+  const parts = String(it.detail || "").split(" · ");
+  c.append(top, el("div", "value", parts[0]));
+  if (it.id === "disk") {   // "ว่าง 242.8 GB จาก 475.7 GB" → แถบพื้นที่ที่ใช้ไป
+    const m = String(it.detail).match(/([\d.]+)\s*GB\D+([\d.]+)\s*GB/);
+    if (m && +m[2] > 0) {
+      const bar = el("div", "bar"), fill = el("i");
+      fill.style.width = Math.min(100, Math.max(0, (1 - m[1] / m[2]) * 100)).toFixed(0) + "%";
+      bar.append(fill); c.append(bar);
+    }
   }
-  const ev = document.getElementById("events"); ev.replaceChildren();
-  if (!s.events.length) ev.append(el("div", "empty", "ยังไม่มีเหตุการณ์"));
-  for (const e of s.events.slice(0, 12)) {
+  if (parts.length > 1) c.append(el("div", "cnote", parts.slice(1).join(" · ")));
+  if ((it.st === "warn" || it.st === "down") && TIP[it.id]) {
+    const t = el("div", "tip"); t.append(el("b", null, "ควรทำอย่างไร"), el("span", null, TIP[it.id])); c.append(t);
+  }
+  return c;
+}
+function renderEvents() {
+  const ev = $("events"); ev.replaceChildren();
+  if (!lastState) return;
+  const list = lastState.events.filter((e) => !onlyBad || e.st === "warn" || e.st === "down").slice(0, 12);
+  if (!list.length) ev.append(el("div", "empty", onlyBad ? "ไม่มีเหตุการณ์ที่เป็นปัญหา" : "ยังไม่มีเหตุการณ์"));
+  for (const e of list) {
     const row = el("div", "ev s-" + e.st);
-    row.append(el("span", "t mono", thDay(e.at) + " " + e.time), el("span", "dot"), el("span", null, e.text));
+    row.append(el("span", "t mono", thDay(e.at) + " " + e.time), el("i"), el("span", null, e.text));
     ev.append(row);
   }
 }
+function render(s) {
+  lastMsg = Date.now(); lastState = s;
+  $("stale").style.display = "none";
+  const n = { ok: 0, warn: 0, down: 0, unknown: 0 };
+  for (const it of s.items) n[it.st] = (n[it.st] || 0) + 1;
+  $("banner").className = "banner s-" + s.overall.st;
+  $("overallText").textContent = s.overall.text;
+  const total = s.items.length;
+  $("overallSub").textContent = s.overall.st === "ok"
+    ? (n.unknown ? `ปกติ ${n.ok} จาก ${total} ส่วน · ยังไม่ทราบ ${n.unknown} ส่วน` : `เช็คครบทั้ง ${total} ส่วน ไม่พบปัญหา`)
+    : `อีก ${n.ok} ส่วนทำงานปกติ · ดูวิธีแก้ในการ์ดด้านล่าง`;
+  $("upd").textContent = s.updatedTh || "--:--:--";
+  $("nOk").textContent = n.ok; $("nWarn").textContent = n.warn; $("nDown").textContent = n.down;
+  document.title = (s.overall.st === "ok" ? "" : s.overall.st === "warn" ? "(มีปัญหา) " : "(ล่ม) ") + "สถานะระบบ KohKae";
+  const ring = (s.sound && s.sound.ringing) || [];
+  $("ackBtn").hidden = !ring.length;
+  $("ackBtn").title = ring.length ? "เสียงกำลังเตือน: " + ring.join(", ") : "";
+  $("grid").replaceChildren(...s.items.map(card));
+  renderEvents();
+}
+const setFilter = (bad) => {
+  onlyBad = bad;
+  $("fAll").classList.toggle("on", !bad); $("fBad").classList.toggle("on", bad);
+  $("fAll").setAttribute("aria-pressed", String(!bad)); $("fBad").setAttribute("aria-pressed", String(bad));
+  renderEvents();
+};
+$("fAll").addEventListener("click", () => setFilter(false));
+$("fBad").addEventListener("click", () => setFilter(true));
+
 // รับสถานะสดจาก server (SSE) · ต่อใหม่เองถ้าหลุด · เบราว์เซอร์ไม่รองรับ → ถามทุก 2 วิแทน
 if (window.EventSource) {
   const es = new EventSource("/api/stream");
@@ -84,24 +198,34 @@ if (window.EventSource) {
   const poll = async () => { try { render(await (await fetch("/api/status", { cache: "no-store" })).json()); } catch (_) {} };
   poll(); setInterval(poll, 2000);
 }
+
 // ── เครื่องมือผู้ดูแล: กดครั้งแรก = ถามยืนยัน, กดซ้ำภายใน 4 วิ = ทำจริง ──
-const actBtn = (label, act) => { const b = el("button", "btn ghost", label); b.type = "button"; b.dataset.act = act; b.dataset.label = label; return b; };
+const actBtn = (label, act) => { const b = el("button", "btn", label); b.type = "button"; b.dataset.act = act; b.dataset.label = label; return b; };
+const onOff = (node, on, text) => { node.textContent = text || (on ? "เปิด" : "ปิด"); node.className = on ? "on" : "off"; };
 async function loadAdmin() {
   let info;
   try { info = await (await fetch("/api/admin", { cache: "no-store" })).json(); } catch (_) { return; }
-  document.getElementById("restartBtns").replaceChildren(...info.services.map((s) => actBtn(s.name, "restart/" + s.id)));
-  document.getElementById("logLinks").replaceChildren(...info.logs.map((l) => {
-    const a = el("a", "btn ghost", l.name); a.href = "/log?f=" + l.id; a.target = "_blank"; a.rel = "noopener"; return a;
+  $("restartBtns").replaceChildren(...info.services.map((s) => actBtn(s.name, "restart/" + s.id)));
+  $("logLinks").replaceChildren(...info.logs.map((l) => {
+    const a = el("a", "btn soft", l.name); a.href = "/log?f=" + l.id; a.target = "_blank"; a.rel = "noopener"; return a;
   }));
-  if (info.email.to.length) document.getElementById("mailBtn").title = "ส่งถึง " + info.email.to.join(", ");
+  if (info.email.to.length) $("mailBtn").title = "ส่งถึง " + info.email.to.join(", ");
+  if (info.features) {
+    onOff($("fSound"), info.features.sound);
+    onOff($("fMail"), info.email.enabled);
+    const h = info.features.healOn;
+    onOff($("fHeal"), h > 0, h > 0 ? `เปิด ${h} จาก ${info.features.healTotal} อย่าง` : "ปิด");
+    onOff($("fImage"), info.features.imageCheck);
+    $("features").hidden = false;
+  }
   if (!info.canAct) {
     document.querySelectorAll("#admin [data-act]").forEach((b) => { b.disabled = true; });
-    document.getElementById("adminNote").textContent = "สั่งงานได้เฉพาะจากเครื่องที่รันระบบ";
+    $("adminNote").textContent = "สั่งงานได้เฉพาะจากเครื่องที่รันระบบ";
   }
 }
 let armed = null, armTimer = null;
 const disarm = () => { if (armed) { armed.textContent = armed.dataset.label; armed.classList.remove("arm"); armed = null; } };
-document.getElementById("admin").addEventListener("click", async (ev) => {
+$("admin").addEventListener("click", async (ev) => {
   const b = ev.target.closest("button[data-act]");
   if (!b || b.disabled) return;
   if (!b.dataset.label) b.dataset.label = b.textContent.trim();
@@ -113,7 +237,7 @@ document.getElementById("admin").addEventListener("click", async (ev) => {
   }
   clearTimeout(armTimer); armed = null; b.classList.remove("arm");
   b.textContent = "กำลังทำ…"; b.disabled = true;
-  const msg = document.getElementById("adminMsg");
+  const msg = $("adminMsg");
   try {
     const r = await fetch("/api/admin/" + b.dataset.act, { method: "POST", headers: { "X-KohKae-Admin": "1" } });
     const j = await r.json();
@@ -121,9 +245,18 @@ document.getElementById("admin").addEventListener("click", async (ev) => {
   } catch (_) { msg.textContent = "ติดต่อตัวเช็คไม่ได้"; msg.className = "amsg bad"; }
   b.textContent = b.dataset.label; b.disabled = false;
 });
+// รับทราบ = หยุดเสียงที่ดังซ้ำ (กดครั้งเดียว ไม่ต้องยืนยัน)
+$("ackBtn").addEventListener("click", async () => {
+  const msg = $("adminMsg");
+  try {
+    const r = await fetch("/api/admin/ack-sound", { method: "POST", headers: { "X-KohKae-Admin": "1" } });
+    const j = await r.json();
+    msg.textContent = j.msg; msg.className = "amsg " + (j.ok ? "ok" : "bad");
+  } catch (_) { msg.textContent = "ติดต่อตัวเช็คไม่ได้"; msg.className = "amsg bad"; }
+});
 loadAdmin();
 // ไม่ได้ข้อมูลใหม่เกิน 5 วิ = ติดต่อตัวเช็คไม่ได้
-setInterval(() => { if (Date.now() - lastMsg > 5000) document.getElementById("stale").style.display = "block"; }, 1000);
+setInterval(() => { if (Date.now() - lastMsg > 5000) $("stale").style.display = "block"; }, 1000);
 </script>
 </body>
 </html>
