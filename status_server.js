@@ -136,6 +136,12 @@ function addEvent(st, text) {
 // ── สถานะแต่ละส่วน ─────────────────────────────────────────────────────
 const NAMES = { camera: "กล้องทางเข้า", scan: "ส่วนสแกนป้าย", api: "ส่วนบันทึกข้อมูล", oracle: "ฐานข้อมูล Oracle", disk: "พื้นที่ดิสก์ C:", backup: "สำรองข้อมูล" };
 const SUBS = { camera: "กล้อง RTSP", scan: "พอร์ต " + SCAN_PORT, api: "พอร์ต " + API_PORT, oracle: "พอร์ต " + ORACLE_PORT_LABEL, disk: "ไดรฟ์ระบบ", backup: "ทุกคืน" };
+// ตัวอ่านน้ำหนักจากจอโปรแกรมชั่ง (ScaleProgram) · เพิ่ม 21 ต.ค. 2569
+// scale_gui.py เขียนสถานะลง logs\status.json ทุก 2 วิ → ที่นี่อ่านไฟล์นั้น · ไม่มีโฟลเดอร์ ScaleProgram = ไม่แสดงการ์ดนี้
+const SCALE_DIR = envStr("SCALE_PROGRAM_DIR", path.resolve(__dirname, "..", "ScaleProgram"));
+const SCALE_STATUS_FILE = envStr("SCALE_STATUS_FILE", path.join(SCALE_DIR, "logs", "status.json"));
+const SCALE_CHECK = envBool("SCALE_CHECK_ENABLED", fs.existsSync(SCALE_DIR));
+if (SCALE_CHECK) { NAMES.scale = "ตัวอ่านน้ำหนัก (ตาชั่ง)"; SUBS.scale = "น้ำหนักจากจอโปรแกรมชั่ง"; }
 const failSince = {};
 const heal = {};       // id → { tries, lastAt } ของปัญหารอบปัจจุบัน (หายแล้วล้าง)
 const last = {};       // id → { st, detail }
@@ -240,6 +246,34 @@ async function checkScanAndCamera() {
     if (online !== false) delete failSince.camera;
   }
 }
+// ข้อความ error ของตัวอ่าน → อาการที่คนอ่านรู้เรื่อง
+function scaleError(msg) {
+  const m = String(msg || "").match(/No module named '([^']+)'/);
+  if (m) return `ขาดไลบรารี ${m[1]} — ติดตั้งด้วย setup_weighpc.bat`;
+  return String(msg || "").slice(0, 90);
+}
+const fmtKg = (kg) => Number(kg).toLocaleString("en-US", { maximumFractionDigits: 1 });
+function checkScale() {
+  if (!SCALE_CHECK) return;
+  let s;
+  try { s = JSON.parse(fs.readFileSync(SCALE_STATUS_FILE, "utf8")); }
+  catch (_) { last.scale = failed("scale", "โปรแกรมอ่านน้ำหนักไม่ได้เปิด"); return; }
+  const age = Date.now() / 1000 - Number(s.at);
+  if (s.stopped) { last.scale = failed("scale", "โปรแกรมอ่านน้ำหนักถูกปิด"); return; }
+  if (!(age < 15)) { last.scale = failed("scale", "โปรแกรมอ่านน้ำหนักไม่ตอบ (ไม่ได้เปิด หรือค้าง)"); return; }
+  const today = s.count_today ? `วันนี้ ${s.count_today} ครั้ง` : "วันนี้ยังไม่มีการชั่ง";
+  const lastW = s.last_kg != null ? ` · ล่าสุด ${fmtKg(s.last_kg)} กก. (${String(s.last_at || "").slice(11, 16)})` : "";
+  if (s.error || (s.color === "red" && !s.reader_alive)) {   // ตัวอ่านจอดับ / เปิดแล้วดับซ้ำๆ
+    const r = failed("scale", "ตัวอ่านจอดับ");
+    last.scale = { ...r, detail: r.detail + (s.error ? " · " + scaleError(s.error) : "") };
+  } else if (s.color === "red" || (s.color === "orange" && /ถูกย่อ/.test(s.text))) {
+    last.scale = failed("scale", s.text.split(" — ")[0]);
+  } else if (s.color === "orange") {   // กำลังโหลด / ยังไม่ได้สอนตัวเลข / อ่านไม่ออก → เหลือง ไม่ล้างเวลาที่นับปัญหาไว้
+    last.scale = { st: "warn", detail: `${s.text} · ${today}${lastW}` };
+  } else {
+    last.scale = okay("scale", (s.popup ? `กำลังชั่ง${s.kg_live ? " " + s.kg_live + " กก." : ""}` : "พร้อม") + ` · ${today}${lastW}`);
+  }
+}
 async function checkApi() {
   try {
     const j = await getJson(`http://${SVC_HOST}:${API_PORT}/api/plates?limit=1`, 3000);
@@ -291,7 +325,7 @@ const tls = require("tls");
 const CHECK_DIR = envStr("CHECKPROGRAM_DIR", path.resolve(__dirname, "..", "checkprogram"));
 const SMTP_HOST = envStr("SMTP_HOST", "smtp.gmail.com");
 const SMTP_PORT = envNum("SMTP_PORT", 465);
-const MAIL_IDS = { camera: "down", scan: "down", api: "down", oracle: "down", disk: "warn", backup: "warn" };   // id → แจ้งเมื่อแย่ถึงระดับนี้ (รวมงานของ checkprogram\\monitor.py มาไว้ที่นี่ 2 ต.ค. 2569)
+const MAIL_IDS = { scale: "down", camera: "down", scan: "down", api: "down", oracle: "down", disk: "warn", backup: "warn" };   // id → แจ้งเมื่อแย่ถึงระดับนี้ (รวมงานของ checkprogram\\monitor.py มาไว้ที่นี่ 2 ต.ค. 2569)
 const RANK = { ok: 0, unknown: 0, warn: 1, down: 2 };
 const mailed = {};     // id → ส่งแจ้งเตือนไปแล้ว รอส่ง "กลับมาปกติ"
 const lastMail = {};   // id → เวลาส่งล่าสุด (กันสแปมตาม ALERT_COOLDOWN_MINUTES)
@@ -408,6 +442,7 @@ const LOGS = {
   backup: { name: "สำรองข้อมูล", file: path.join(ROOT, "backups", "nightly.log") },
   monitor: { name: "ตัวเฝ้าระบบ (monitor)", file: path.join(CHECK_DIR, "monitor.log") },
 };
+if (SCALE_CHECK) LOGS.scale = { name: "ตาชั่ง", file: path.join(SCALE_DIR, "logs", "gui_error.log") };
 const RESTART_GAP_MS = envNum("RESTART_GAP_SECONDS", 30) * 1000;
 const lastRestart = {};
 let backupBusy = false;
@@ -608,6 +643,8 @@ const SETTINGS = [
   F("เสียงเตือน", "SOUND_ON_WARN", "ดังตั้งแต่เป็นสีเหลือง (ไม่รอให้แดง)", "bool", false),
   F("เสียงเตือน", "SOUND_REPEAT_SECONDS", "ดังซ้ำทุกกี่วินาทีจนกว่าจะกดรับทราบ", "number", 30, "0 = ดังครั้งเดียว"),
   F("เสียงเตือน", "SOUND_FILE", "ไฟล์เสียง .wav ที่ใช้", "text", "", "เว้นว่าง = เสียง Alarm01 ของ Windows"),
+  F("ตาชั่ง", "SCALE_CHECK_ENABLED", "เช็คโปรแกรมอ่านน้ำหนักจากจอโปรแกรมชั่ง", "bool", fs.existsSync(SCALE_DIR), "ปิดได้ถ้าเครื่องนี้ไม่ได้ใช้ตาชั่ง"),
+  F("ตาชั่ง", "SCALE_PROGRAM_DIR", "โฟลเดอร์โปรแกรมอ่านน้ำหนัก", "text", path.resolve(__dirname, "..", "ScaleProgram")),
   F("เกณฑ์เตือน", "DOWN_AFTER_SECONDS", "มีปัญหานานกี่วินาทีถึงเป็นสีแดง", "number", 60, "ครบแล้วส่งอีเมลด้วย"),
   F("เกณฑ์เตือน", "DISK_WARN_GB", "ดิสก์เหลือน้อยกว่ากี่ GB = เหลือง", "number", 15),
   F("เกณฑ์เตือน", "DISK_DOWN_GB", "ดิสก์เหลือน้อยกว่ากี่ GB = แดง", "number", 5),
@@ -791,6 +828,7 @@ function startChecks() {
   startImageCheck();
   loop(checkScanAndCamera, FAST_MS);
   loop(checkApi, API_MS);
+  if (SCALE_CHECK) loop(async () => checkScale(), 2000);
   loop(checkOracle, ORACLE_MS);
   loop(async () => { checkDisk(); checkBackup(); }, SLOW_MS);
 }
@@ -807,7 +845,8 @@ function snapshot() {
 }
 
 // ── หน้าเว็บ ───────────────────────────────────────────────────────────
-const PAGE = fs.readFileSync(path.join(__dirname, "status_page.html"), "utf8");
+// อ่าน status_page.html ใหม่ทุกครั้งที่เปิดหน้า → แก้ไฟล์แล้วกดรีเฟรชเห็นเลย ไม่ต้องเปิดเซิร์ฟเวอร์ใหม่
+const readPage = () => { try { return fs.readFileSync(path.join(__dirname, "status_page.html"), "utf8"); } catch (_) { return "ไม่พบ status_page.html"; } };
 // ส่งสถานะเข้าหน้าเว็บสดๆ (Server-Sent Events) ไม่ต้องรอหน้าเว็บมาถามทุก 5 วิ
 const clients = new Set();
 let lastPush = { json: "", at: 0 };
@@ -884,7 +923,7 @@ const server = http.createServer((req, res) => {
   }
   if (url === "/" || url === "/index.html") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-    return res.end(PAGE);
+    return res.end(readPage());
   }
   res.writeHead(404); res.end("not found");
 });

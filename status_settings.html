@@ -43,7 +43,7 @@ const post = (path, body) => fetch("/api/admin/" + path, { method: "POST", heade
 const msg = document.getElementById("msg");
 const say = (text, ok) => { msg.textContent = text; msg.className = "amsg " + (ok ? "ok" : "bad"); };
 const inputs = {};
-const GROUP_ID = { "กล้อง": "gcam", "อีเมลแจ้งเตือน": "gmail", "เสียงเตือน": "gsound", "เกณฑ์เตือน": "glimit", "ตรวจคุณภาพภาพกล้อง": "gimage", "ซ่อมตัวเอง": "gheal" };
+const GROUP_ID = { "กล้อง": "gcam", "อีเมลแจ้งเตือน": "gmail", "เสียงเตือน": "gsound", "เกณฑ์เตือน": "glimit", "ตรวจคุณภาพภาพกล้อง": "gimage", "ซ่อมตัวเอง": "gheal", "ตาชั่ง": "gscale" };
 
 function fieldRow(f) {
   const row = el("label", "frow" + (f.type === "bool" ? " check" : ""));
@@ -100,22 +100,9 @@ async function load() {
     cam.querySelector(".ph").append(b);
   }
   const snd = groups["เสียงเตือน"];
-  if (snd && inputs.SOUND_FILE) {
-    // เลือกเสียงจากรายการของ Windows + ลองฟังก่อนบันทึก
-    const fileInput = inputs.SOUND_FILE.input;
-    const sel = el("select", "finput");
-    sel.setAttribute("aria-label", "เลือกเสียงจากรายการของ Windows");
-    const opt = (text, value) => { const o = el("option", null, text); o.value = value; return o; };
-    sel.append(opt("เสียงเริ่มต้น (Alarm01)", ""));
-    for (const sd of info.sounds || []) sel.append(opt(sd.name, sd.path));
-    sel.append(opt("ไฟล์อื่น — พิมพ์ที่อยู่เองในช่องด้านล่าง", "__custom"));
-    const sync = () => { sel.value = [...sel.options].some((o) => o.value === fileInput.value) ? fileInput.value : "__custom"; };
-    sync();
-    sel.onchange = () => { if (sel.value !== "__custom") fileInput.value = sel.value; else fileInput.focus(); };
-    fileInput.addEventListener("input", sync);
-    fileInput.before(sel);
-    const b = el("button", "btn", "ฟังเสียงนี้"); b.type = "button";
-    b.onclick = async () => { b.disabled = true; say("กำลังเล่นเสียง…", true); const j = await post("test-sound", { file: fileInput.value }); say(j.msg, j.ok); b.disabled = false; };
+  if (snd) {
+    const b = el("button", "btn", "ทดสอบเสียง (ใช้ค่าที่บันทึกแล้ว)"); b.type = "button";
+    b.onclick = async () => { b.disabled = true; say("กำลังเล่นเสียง…", true); const j = await post("test-sound"); say(j.msg, j.ok); b.disabled = false; };
     snd.querySelector(".ph").append(b);
   }
   if (mail) {

@@ -110,6 +110,7 @@ const TIP = {
   oracle: "เช็คว่าเครื่องฐานข้อมูลเปิดอยู่ และเครื่องนี้ต่อวงแลนถึงกันได้",
   disk: "ลบหรือย้ายไฟล์ภาพเก่าออกจากไดรฟ์ C:",
   backup: "กด “สำรองข้อมูลตอนนี้” แล้วดู log สำรองข้อมูล",
+  scale: "กด Ctrl+Alt+K เปิดหน้าต่าง KohKae ตาชั่ง ดูข้อความล่าสุด · ถ้าโปรแกรมไม่ได้เปิด ให้ดับเบิลคลิก run.bat ในโฟลเดอร์ ScaleProgram · ถ้าโปรแกรมชั่งถูกย่อ ให้เปิดหน้าต่างโปรแกรมชั่งขึ้นมา",
 };
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -128,6 +129,7 @@ showTheme();
 
 // ── แสดงสถานะ ──
 let lastMsg = Date.now(), lastState = null, onlyBad = false;
+const openTips = new Set();
 function card(it) {
   const c = el("article", "card s-" + it.st);
   const top = el("div", "top"), left = el("div");
@@ -146,7 +148,14 @@ function card(it) {
   }
   if (parts.length > 1) c.append(el("div", "cnote", parts.slice(1).join(" · ")));
   if ((it.st === "warn" || it.st === "down") && TIP[it.id]) {
-    const t = el("div", "tip"); t.append(el("b", null, "ควรทำอย่างไร"), el("span", null, TIP[it.id])); c.append(t);
+    // กล่องคำแนะนำแบบย่อได้ · ปิดไว้ก่อน กดหัวข้อเพื่อเปิด · จำไว้ว่าเปิดการ์ดไหนอยู่ (หน้าวาดใหม่ทุกวิ)
+    const t = el("details", "tip"); t.open = openTips.has(it.id);
+    t.addEventListener("toggle", () => { if (t.open) openTips.add(it.id); else openTips.delete(it.id); });
+    const steps = TIP[it.id].split(" · ");
+    t.append(el("summary", null, "ควรทำอย่างไร"));
+    if (steps.length > 1) { const ol = el("ol"); for (const s of steps) ol.append(el("li", null, s)); t.append(ol); }
+    else t.append(el("span", null, steps[0]));
+    c.append(t);
   }
   return c;
 }

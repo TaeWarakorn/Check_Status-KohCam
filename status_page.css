@@ -74,6 +74,14 @@ a.chip:hover{border-color:var(--muted)}
 .cnote{font-size:14px;color:var(--muted);overflow-wrap:anywhere}
 .tip{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:var(--r-sm);background:var(--c-bg);font-size:14px}
 .tip b{font-size:13px;color:var(--c-fg)}
+details.tip{gap:0;padding:0}
+.tip summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;padding:0 14px;font-size:13px;font-weight:700;color:var(--c-fg);cursor:pointer;list-style:none}
+.tip summary::-webkit-details-marker{display:none}
+.tip summary::after{content:"แสดง ▾";font-weight:600;opacity:.85}
+.tip[open] summary::after{content:"ซ่อน ▴"}
+.tip ol,.tip>span{margin:0;padding:0 14px 12px 34px}
+.tip>span{padding-left:14px}
+.tip li+li{margin-top:4px}
 
 /* แผงล่าง */
 .cols{display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px}
